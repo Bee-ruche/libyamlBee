@@ -45,6 +45,3 @@ stamp-h1
 /tests/test-reader
 /tests/test-version
 /dist/
-
-# CI du registre réparti : checkout de l'outil central, jamais versionné
-.bee-central/

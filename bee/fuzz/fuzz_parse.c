@@ -6,14 +6,14 @@
    document YAML.
 
    Différentiel : bee/fuzz/lancer.sh --reference lie dans le même exécutable une seconde copie de
-   libyaml (la base de la PR), dont tous les symboles yaml_* et bee_flux sont renommés ref_* (objcopy).
+   libyaml (la base de la PR), dont tous les symboles yaml_* et bee_flux sont renommés ref_* (#define).
    Chaque entrée est analysée par les deux ; le flux sérialisé doit être identique octet pour octet :
    type, ancre, tag, valeur, style, indicateurs implicites, directives, encodage, marques de début et
    de fin de chaque événement, et en cas d'erreur son type, son message, son contexte et ses positions.
    Tout écart appelle abort(), que lancer.sh classe (nouveau ou préexistant).
 
    Compilations (voir lancer.sh) :
-     -DBEE_FLUX_SEUL         ne définit que bee_flux (copie de référence, renommée ensuite) ;
+     -DBEE_FLUX_SEUL         ne définit que bee_flux (copie de référence, renommée à la compilation) ;
      -DBEE_SANS_REFERENCE    harnais simple, sans différentiel (pas de --reference, ou rejeu sur la base). */
 
 #include <yaml.h>

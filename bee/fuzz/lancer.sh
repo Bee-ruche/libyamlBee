@@ -12,7 +12,7 @@
 #   --moteur     libfuzzer : clang -fsanitize=fuzzer,address,undefined (runtime libclang-rt requis) ;
 #                gcc       : repli, gcc ASan/UBSan et le pilote aléatoire bee/fuzz/pilote_aleatoire.c ;
 #                auto      : libfuzzer si clang sait lier -fsanitize=fuzzer, sinon gcc (défaut).
-# Compile directement (pas de make) ; la copie de référence est renommée ref_* par objcopy.
+# Compile directement (pas de make) ; la copie de référence est renommée ref_* dès la compilation.
 # Variables : CLANG (défaut clang), CC (défaut cc), BEE_FUZZ_SORTIES (journal et entrées fautives,
 #             défaut bee/fuzz/sorties), BEE_CONSTR (construction), BEE_FUZZ_DISCRET (1 : ni journal,
 #             ni trace, ni entrée affichés, seulement leur empreinte ; 1 par défaut sous GitHub Actions).
@@ -73,13 +73,14 @@ constr="$constr/$moteur"
 rm -rf "$constr" "$sorties/fuzz_parse"
 mkdir -p "$constr" "$sorties/fuzz_parse"
 
-# objets <sources libyaml> <dossier> [-D…] : libyaml + fuzz_parse.c (avec les -D donnés) en .o.
+# objets <sources libyaml> <dossier> [options…] : libyaml + fuzz_parse.c en .o, avec les options données
+# (-D…, -include…) pour chaque fichier.
 objets() {
   local src="$1" dossier="$2" f
   shift 2
   mkdir -p "$dossier"
   for f in "$src"/src/*.c; do
-    "$compilateur" "${DRAPEAUX[@]}" "${couverture[@]}" -I"$src/include" -c "$f" -o "$dossier/$(basename "$f" .c).o"
+    "$compilateur" "${DRAPEAUX[@]}" "${couverture[@]}" -I"$src/include" "$@" -c "$f" -o "$dossier/$(basename "$f" .c).o"
   done
   "$compilateur" "${DRAPEAUX[@]}" "${couverture[@]}" -I"$src/include" "$@" -c "$ICI/fuzz_parse.c" -o "$dossier/fuzz_parse.o"
 }
@@ -106,13 +107,17 @@ FIN
 echo "== Compilation ($moteur, sources : $source_yaml${reference:+, référence : $reference})"
 if [ -n "$reference" ]; then
   objets "$source_yaml" "$constr/candidat"
-  objets "$reference" "$constr/reference" -DBEE_FLUX_SEUL
   objets "$reference" "$constr/reference-seule" -DBEE_SANS_REFERENCE
   lier "$constr/rejeu-reference" "$constr/reference-seule/"*.o
   # Copie de référence : tous ses symboles globaux définis (yaml_*, bee_flux, MAX_NESTING_LEVEL…)
-  # deviennent ref_*, pour cohabiter avec le candidat dans le même exécutable.
-  nm -g --defined-only "$constr/reference/"*.o | awk 'NF == 3 {print $3, "ref_" $3}' | sort -u > "$constr/renommage.txt"
-  for f in "$constr/reference/"*.o; do objcopy --redefine-syms="$constr/renommage.txt" "$f"; done
+  # deviennent ref_* dès la compilation (un #define par symbole), pour cohabiter avec le candidat dans le
+  # même exécutable. Les renommer après coup (objcopy) ne suffit pas avec clang : ASan nomme ses groupes
+  # COMDAT d'après les symboles exportés du module, identiques dans les deux copies, et l'éditeur de
+  # liens écarte alors ceux de la référence (« defined in discarded section »).
+  nm -g --defined-only "$constr/reference-seule/"*.o \
+    | awk 'NF == 3 && $3 ~ /^[A-Za-z_][A-Za-z0-9_]*$/ && $3 !~ /^__/ && $3 != "LLVMFuzzerTestOneInput" {print "#define " $3 " ref_" $3}' \
+    | sort -u > "$constr/renommage.h"
+  objets "$reference" "$constr/reference" -DBEE_FLUX_SEUL -include "$constr/renommage.h"
   lier "$constr/fuzz_parse" "$constr/candidat/"*.o "$constr/reference/"*.o
 else
   objets "$source_yaml" "$constr/candidat" -DBEE_SANS_REFERENCE

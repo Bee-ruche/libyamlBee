@@ -17,6 +17,21 @@ erreur d'analyse). C'est l'invariant que vérifie l'oracle.
 `clang` avec `libclang-rt`. libyaml se compile sans `config.h` ; l'outillage fournit les macros de
 version et `YAML_DECLARE_STATIC` (voir `bee/Makefile`).
 
+## Sandbox : exécuter le code sans réseau ni secret
+
+Le code des contributions s'exécute isolé (commandement 6). Sans Docker, par exemple dans une
+session cloud jetable, sous Linux :
+
+```bash
+bee/sandbox/sans-docker.sh make -C bee oracle    # une commande
+bee/sandbox/sans-docker.sh bash                  # une session
+```
+
+Le script lance la commande à la racine du dépôt, sans réseau, sans les variables d'environnement de
+l'utilisateur (jetons, proxy) et avec un dossier personnel vide (`~/.config/gh` est masqué). Il exige
+les espaces de noms utilisateur (`unshare -r`) ; s'ils sont refusés, il le dit. Le fork n'a pas encore
+d'image Docker (à construire par la ruche, sur le modèle de `bee/sandbox/Dockerfile` de minizBee).
+
 ## Déterminisme (correction)
 
 ```bash

@@ -20,6 +20,8 @@ CMakeFiles/
 DartConfiguration.tcl
 GNUmakefile
 Makefile
+# Le Makefile des juges Bee est versionné (le Makefile racine est généré par autotools).
+!/bee/Makefile
 Makefile.in
 /aclocal.m4
 /autom4te.cache

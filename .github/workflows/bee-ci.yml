@@ -12,8 +12,12 @@
 #
 # Sécurité : identique à la CI de miniz. permissions contents: read, aucun secret, persist-credentials
 # false, déclencheur pull_request. Les juges (bee/) viennent de la BASE de la PR ; seules les sources
-# de libyaml viennent de la PR, qui ne peut donc pas assouplir ce qui la juge. CONTRIBUTION.yaml et la
+# de libyaml viennent de la PR, qui ne peut pas assouplir ces fichiers-là. CONTRIBUTION.yaml et la
 # tâche sont des données (yaml.safe_load). « ci » est décidée par le job verdict d'après needs.*.result.
+# MAIS ce fichier de workflow est celui de la PR (déclencheur pull_request) : une PR qui modifie .github/
+# ou bee/ peut fabriquer son propre verdict. Le registre le détecte de son côté (liste des fichiers de la
+# PR lue auprès de l'API GitHub, verdicts.yml) : verdict refusé pour une optimisation, relecture du
+# conseil ou d'un Confirmé exigée pour une tâche d'outillage (R3).
 name: bee-ci
 
 on:

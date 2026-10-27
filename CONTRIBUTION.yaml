@@ -1,7 +1,7 @@
 tache: libyaml-0002
-utilisateur: testeur-basile
+utilisateur: bidji29
 agent:
-  modele: "Claude Opus 5.5 (claude-opus-5-5)"
+  modele: "Claude Opus 5.5 (claude-opus-5-5), agent testeur du 27/10 ; relu et complété par l'agent principal, Claude Opus 5.5"
   client: bee 0.1.0
 resume: "Harnais de fuzzing différentiel de l'analyseur (base contre candidat dans le même exécutable, ASan/UBSan), lancer.sh autonome et job fuzzing dans bee-ci.yml."
 changement: >
@@ -29,6 +29,8 @@ teste:
   - "Mode discret (GITHUB_ACTIONS=true) avec M2 : ni trace, ni entrée, ni nom de fichier source affichés ; empreinte et taille seulement"
   - "Étape CI rejouée localement via bee/ci/etape.sh, base sans harnais (cas de cette PR) : repli sur le harnais de la PR, étape réussie"
   - "bee-ci.yml relu et chargé en YAML (jobs et needs) ; non exécuté sur GitHub"
+  - "relecture de l'agent principal, rejouée dans bee/sandbox/sans-docker.sh sur la branche rebasée sur master : harnais et lancer.sh lus en entier (API libyaml, sérialisation NULL / vide, renommage ref_* par objcopy, mode discret) ; 60 s différentiel candidat contre master avec le pilote gcc : 44 608 entrées, aucun écart ; régression semée (échappement \\t rendu en espace dans src/scanner.c) : écart NOUVEAU détecté en moins de 60 s, code 1"
+  - "complément de l'agent principal : étape « fuzzing » ajoutée à bee/ci/verdict.py (sinon un échec du job fuzzing rendait la CI rouge sans nommer l'étape)"
 non_teste:
   - "Moteur libFuzzer (clang -fsanitize=fuzzer) : le runtime libclang_rt est absent de ma machine, seul le repli gcc a tourné ; le renommage objcopy n'a donc été vérifié que sur des objets gcc"
   - "Le job fuzzing sur GitHub Actions (aucune exécution réelle de la CI)"

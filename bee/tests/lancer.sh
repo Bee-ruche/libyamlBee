@@ -21,12 +21,14 @@ CONSTR="${BEE_CONSTR:-$BEE/construction/tests}"
 REFERENCE="$ICI/empreintes-reference.txt"
 
 mode="comparer"
-for arg in "$@"; do
-  case "$arg" in
+while [ $# -gt 0 ]; do
+  case "$1" in
     --sans-empreintes) mode="sans" ;;
     --regenerer-empreintes) mode="regenerer" ;;
-    *) echo "option inconnue : $arg" >&2; exit 2 ;;
+    --source) SOURCE="$(cd "$2" && pwd)"; shift ;;
+    *) echo "option inconnue : $1" >&2; exit 2 ;;
   esac
+  shift
 done
 
 echo "== 1/3 Corpus de référence"

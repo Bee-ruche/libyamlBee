@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Assemble verdict.json pour la CI Bee du fork miniz (job « verdict » de .github/workflows/bee-ci.yml).
+"""Assemble verdict.json pour la CI Bee du fork libyaml (job « verdict » de .github/workflows/bee-ci.yml).
 
 Entrées :
   --jobs        résultats des jobs GitHub (toJSON(needs) : {"manifeste": {"result": "success", "outputs": {...}}, ...}).
@@ -51,7 +51,7 @@ ETAPES = [
     ("banc_ab", "Banc A/B", "banc-ab"),
 ]
 METRIQUES = ["debit_analyse", "debit_chargement", "debit_emission", "memoire_max_ko"]
-# Repris de projets/miniz.yaml (chemins_hors_decompte) dans le registre Bee.
+# Repris de projets/libyaml.yaml (chemins_hors_decompte) dans le registre Bee, plus le manifeste.
 CHEMINS_HORS_DECOMPTE = ["bee/**", "tests/**", "CONTRIBUTION.yaml"]
 
 
@@ -133,7 +133,7 @@ def trouver(dossier, nom):
 
 
 def main():
-    analyseur = argparse.ArgumentParser(description="Assemble verdict.json pour la CI Bee du fork miniz.")
+    analyseur = argparse.ArgumentParser(description="Assemble verdict.json pour la CI Bee du fork libyaml.")
     analyseur.add_argument("--jobs", help="toJSON(needs) du workflow : résultats des jobs (source de vérité de « ci »)")
     analyseur.add_argument("--artefacts", help="dossier des artefacts etat-* téléchargés")
     analyseur.add_argument("--etats", help="dossier des fichiers <etape>.txt (simulation locale)")

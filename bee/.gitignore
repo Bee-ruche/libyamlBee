@@ -13,3 +13,7 @@ slow-unit-*
 corpus-fuzz_*/
 __pycache__/
 *.pyc
+
+# Artefacts produits localement
+/verdict.json
+/etats/

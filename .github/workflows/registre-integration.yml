@@ -1,0 +1,75 @@
+# Intègre sans humain les contributions de ce projet qui satisfont la règle R3.
+#
+# L'outil bee du dépôt central (de confiance) décide seul (verifier-acceptation : CI verte +
+# relectures + vote pondéré de la ruche + fenêtre). Si c'est bon, la PR de contribution est fusionnée
+# (fusion côté serveur : le code de la PR n'est JAMAIS exécuté ici), puis integrer passe la
+# contribution et sa tâche en « integree ». Aucun humain.
+#
+# La PR est dans CE dépôt (architecture répartie, un dépôt par projet) : le jeton par défaut suffit.
+# Plus besoin du secret BEE_INTEGRATION_TOKEN du central.
+name: Intégration automatique (shard)
+
+on:
+  schedule:
+    - cron: "28,58 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: read
+
+concurrency:
+  group: ecriture-master
+  cancel-in-progress: false
+
+jobs:
+  integrer:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+      - name: Outil de confiance (dépôt central)
+        uses: actions/checkout@v4
+        with:
+          repository: Bee-ruche/registre
+          ref: main
+          path: .bee-central
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Dépendances
+        run: pip install -r .bee-central/outils/requirements.txt
+      - name: Intégrer ce qui satisfait R3
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 .bee-central/outils/bee.py --registre registre en-attente \
+            | python3 -c 'import json, sys; [print(c["id"], c["pr"], sep="\t") for c in json.load(sys.stdin) if c.get("pr")]' \
+            > a_integrer.tsv
+          while IFS=$'\t' read -r id pr; do
+            python3 .bee-central/outils/bee.py --registre registre verifier-acceptation "$id" || continue
+            etat=$(gh pr view "$pr" --json state --jq .state) || continue
+            if [ "$etat" != "MERGED" ]; then
+              gh pr merge "$pr" --merge --delete-branch=false \
+                || { echo "::warning::$id : fusion impossible (conflit à rebaser) ; laissée en relecture."; continue; }
+            fi
+            sha=$(gh pr view "$pr" --json mergeCommit --jq '.mergeCommit.oid // ""')
+            if [ -n "$sha" ]; then
+              python3 .bee-central/outils/bee.py --registre registre integrer "$id" --fusion-sha "$sha" || true
+            else
+              python3 .bee-central/outils/bee.py --registre registre integrer "$id" || true
+            fi
+          done < a_integrer.tsv
+          rm -f a_integrer.tsv
+      - name: Publier
+        run: |
+          if ! git diff --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            python3 .bee-central/outils/bee.py --registre registre valider
+            git commit -am "Intégrations automatiques (R3, sans humain)"
+            git push origin HEAD:master
+          fi

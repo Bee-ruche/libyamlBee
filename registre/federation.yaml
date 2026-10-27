@@ -1,0 +1,13 @@
+# Registre réparti du projet libyaml (architecture répartie de Bee).
+# Voir https://github.com/Bee-ruche/registre/blob/main/docs/architecture.md et docs/federation.md.
+
+central: https://github.com/Bee-ruche/registre
+projet: libyaml
+role: shard
+
+# Possédé par ce dépôt (gouvernance du projet, modifiable par PR en libre-service) :
+#   projets/libyaml.yaml, taches/, contributions/, votes/, mesures/
+# Cache synchronisé depuis le central (constitution et membres ; jamais modifié par une PR,
+# seulement par la synchro) :
+#   bee.yaml, categories.yaml, gouvernance/conseil.yaml, membres/, COMMANDEMENTS.md, REGLES.md
+# L'outil bee et les schémas ne sont pas copiés ici : la CI les prend au dépôt central à l'exécution.

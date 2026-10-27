@@ -1,0 +1,48 @@
+tache: libyaml-0002
+utilisateur: testeur-basile
+agent:
+  modele: "Claude Opus 5.5 (claude-opus-5-5)"
+  client: bee 0.1.0
+resume: "Harnais de fuzzing différentiel de l'analyseur (base contre candidat dans le même exécutable, ASan/UBSan), lancer.sh autonome et job fuzzing dans bee-ci.yml."
+changement: >
+  bee/fuzz/fuzz_parse.c : harnais libFuzzer (et pilote de repli) qui analyse une entrée arbitraire et
+  consomme tous les événements. Le premier octet choisit la lecture : chaîne entière (0) ou gestionnaire
+  de lecture livrant k octets à la fois (flux découpé, limites de tampon du lecteur). Le flux est
+  sérialisé strictement : type, ancre, tag, valeur, style, indicateurs implicites, directives, encodage,
+  marques de début et de fin, et en cas d'erreur son type, son message, son contexte et ses positions.
+  Différentiel : avec --reference, lancer.sh lie dans le même exécutable une seconde copie de libyaml
+  (la base) dont tous les symboles globaux définis sont renommés ref_* par objcopy ; tout écart de flux
+  ou de statut appelle abort(). Chaque entrée fautive est rejouée sur la référence seule : écart
+  préexistant (avertissement, code 0) ou nouveau (erreur, code 1). Mode discret sous GitHub Actions
+  (empreinte et taille seulement), repli gcc + pilote aléatoire quand clang ne sait pas lier libFuzzer.
+  bee/fuzz/lancer.sh compile directement, sans make : bee/Makefile, cité par bee/README.md et utilisé
+  par bee/tests/lancer.sh, n'est pas dans le dépôt (ignoré par la règle « Makefile » du .gitignore
+  racine), ce qui casse aussi l'étape « déterminisme » de la CI (signalé au registre, hors de cette tâche).
+  .github/workflows/bee-ci.yml : job « fuzzing » (clang-18 + libclang-rt-18-dev, 600 s, --source pr
+  --reference base, mode discret) sur le modèle de minizBee, ajouté aux needs du job verdict. Le harnais
+  est celui de la base ; seule la PR qui l'introduit (base sans harnais) utilise le sien, avec une notice.
+teste:
+  - "Fuzzing différentiel base contre base, repli gcc 13.3 + pilote aléatoire, ASan/UBSan, 600 s : 369 920 entrées, aucun écart (bee/fuzz/lancer.sh 600 --reference <worktree upstream/master>, x86-64, Ubuntu 24.04, sans réseau)"
+  - "Régression semée M1 (scanner.c : l'échappement \\t produit une espace) : écart NOUVEAU signalé dès les graines, code 1"
+  - "Régression semée M2 (api.c : lecture d'un octet après la fin de l'entrée chaîne) : ASan heap-buffer-overflow, écart NOUVEAU, code 1"
+  - "M2 appliquée aussi à la référence : écart PRÉEXISTANT (avertissement), code 0"
+  - "Mode discret (GITHUB_ACTIONS=true) avec M2 : ni trace, ni entrée, ni nom de fichier source affichés ; empreinte et taille seulement"
+  - "Étape CI rejouée localement via bee/ci/etape.sh, base sans harnais (cas de cette PR) : repli sur le harnais de la PR, étape réussie"
+  - "bee-ci.yml relu et chargé en YAML (jobs et needs) ; non exécuté sur GitHub"
+non_teste:
+  - "Moteur libFuzzer (clang -fsanitize=fuzzer) : le runtime libclang_rt est absent de ma machine, seul le repli gcc a tourné ; le renommage objcopy n'a donc été vérifié que sur des objets gcc"
+  - "Le job fuzzing sur GitHub Actions (aucune exécution réelle de la CI)"
+  - "ARM64"
+  - "La CI complète ne peut pas être verte en l'état : l'étape déterminisme échoue sur toute PR faute de bee/Makefile (préexistant, signalé)"
+doutes: >
+  1) La sérialisation inclut les marques (ligne, colonne, index) et le texte des erreurs : plus strict que
+  l'oracle (flux yaml-test-suite). Une optimisation qui ne changerait que des positions serait refusée ;
+  c'est voulu (positions visibles par les utilisateurs de l'API), mais à confirmer par le conseil.
+  2) Les assertions de libyaml restent actives (pas de -DNDEBUG, contrairement au fuzzing de miniz) : plus
+  de défauts visibles, au risque d'en signaler qu'une construction Release masquerait.
+  3) Le repli sur le harnais de la PR quand la base n'en a pas ne vaut que pour la PR qui l'introduit ;
+  une PR dont la base serait antérieure à ce harnais pourrait fournir le sien.
+  4) Le pilote gcc n'a pas de retour de couverture : 10 minutes de repli valent bien moins que 10 minutes
+  de libFuzzer. 5) etape_en_echec affichera « job fuzzing » : bee/ci/verdict.py (hors des fichiers de la
+  tâche) ne connaît pas encore cette étape.
+taille_reelle: M

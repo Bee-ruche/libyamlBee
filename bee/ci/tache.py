@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Trouve, dans le registre Bee, la tâche que désigne le manifeste CONTRIBUTION.yaml d'une PR.
+"""Trouve, dans le registre Bee, la tâche que désigne le manifeste d'une PR (manifestes/<tâche>.yaml).
 
 Le manifeste vient de la PR : c'est une donnée, lue avec yaml.safe_load et validée, jamais exécutée.
 La tâche et la liste des métriques viennent du registre (branche main, projets/libyaml.yaml) : c'est
 lui, et non la PR, qui fixe la métrique visée.
 
-Usage : python3 bee/ci/tache.py --manifeste pr/CONTRIBUTION.yaml --registre registre [--sortie tache.yaml]
+Usage : python3 bee/ci/tache.py --manifeste pr/manifestes/libyaml-0012.yaml --registre registre [--sortie tache.yaml]
 Sortie standard, une ligne par valeur, au format de $GITHUB_OUTPUT :
   tache=libyaml-0010
   type=optimisation
@@ -44,17 +44,20 @@ def main():
     args = analyseur.parse_args()
 
     if not os.path.exists(args.manifeste):
-        echouer("CONTRIBUTION.yaml absent à la racine de la PR (voir AGENTS.md du registre : bee manifeste)")
+        echouer("manifeste absent : la PR doit ajouter manifestes/<tâche>.yaml (voir AGENTS.md du registre : bee manifeste)")
     try:
         with open(args.manifeste, encoding="utf-8") as f:
             manifeste = yaml.safe_load(f)
     except yaml.YAMLError as e:
-        echouer(f"CONTRIBUTION.yaml illisible : {e}")
+        echouer(f"manifeste illisible : {e}")
     if not isinstance(manifeste, dict):
-        echouer("CONTRIBUTION.yaml ne contient pas un objet YAML")
+        echouer("le manifeste ne contient pas un objet YAML")
     tache = manifeste.get("tache")
     if not isinstance(tache, str) or not MOTIF_TACHE.match(tache):
         echouer(f"la clé « tache » du manifeste doit être un identifiant {PROJET}-NNNN")
+    nom = os.path.basename(args.manifeste)
+    if nom != "CONTRIBUTION.yaml" and nom != tache + ".yaml":
+        echouer(f"le manifeste {nom} désigne la tâche {tache} : il doit s'appeler manifestes/{tache}.yaml")
 
     # Liste fermée des métriques : celle du descripteur de projet du registre (jamais celle de la PR).
     try:

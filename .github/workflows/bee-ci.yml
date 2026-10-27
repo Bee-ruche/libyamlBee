@@ -107,9 +107,14 @@ jobs:
           base/bee/ci/etape.sh "$ETATS" manifeste_et_taille base/bee/ci/manifeste.sh pr registre python3
       - name: Conserver le manifeste, la tâche et l'état
         if: always()
+        env:
+          MANIFESTE: ${{ steps.manifeste.outputs.manifeste }}
         run: |
           mkdir -p donnees
-          cp pr/CONTRIBUTION.yaml donnees/ 2>/dev/null || true
+          # Nom validé par bee/ci/manifeste.sh (manifestes/libyaml-NNNN.yaml ou CONTRIBUTION.yaml).
+          case "$MANIFESTE" in
+            manifestes/libyaml-[0-9][0-9][0-9][0-9].yaml|CONTRIBUTION.yaml) cp "pr/$MANIFESTE" donnees/CONTRIBUTION.yaml 2>/dev/null || true ;;
+          esac
           cp -r "$ETATS" donnees/etats 2>/dev/null || true
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()

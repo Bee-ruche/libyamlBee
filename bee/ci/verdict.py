@@ -52,7 +52,7 @@ ETAPES = [
 ]
 METRIQUES = ["debit_analyse", "debit_chargement", "debit_emission", "memoire_max_ko"]
 # Repris de projets/libyaml.yaml (chemins_hors_decompte) dans le registre Bee, plus le manifeste.
-CHEMINS_HORS_DECOMPTE = ["bee/**", "tests/**", "CONTRIBUTION.yaml"]
+CHEMINS_HORS_DECOMPTE = ["bee/**", "tests/**", "CONTRIBUTION.yaml", "manifestes/**"]
 
 
 def lire_texte(chemin):

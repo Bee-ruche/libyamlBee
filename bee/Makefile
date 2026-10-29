@@ -1,6 +1,7 @@
 # Construction de l'outillage Bee pour libyaml.
 #
 #   make -C bee oracle           harnais d'analyse (flux d'événements) — assertions actives
+#   make -C bee aller-retour     aller-retour de l'émetteur (événements → YAML → événements) — assertions actives
 #   make -C bee banc             banc de mesure (options « Release » : -O3 -DNDEBUG)
 #   make -C bee fuzz-libfuzzer    harnais libFuzzer (clang complet requis)
 #   make -C bee fuzz-gcc          mêmes harnais, pilote aléatoire + ASan/UBSan de gcc (repli local)
@@ -37,17 +38,23 @@ OPT_TESTS ?= -O2 -g
 
 CACHEGRIND := $(shell printf '\043include <valgrind/cachegrind.h>\nint main(void){return 0;}\n' | $(CC) -x c - -o /dev/null 2>/dev/null && echo -DBEE_AVEC_CACHEGRIND)
 
-.PHONY: oracle banc fuzz-libfuzzer fuzz-gcc tout nettoyer
+.PHONY: oracle aller-retour banc fuzz-libfuzzer fuzz-gcc tout nettoyer
 
-tout: oracle banc
+tout: oracle aller-retour banc
 
 oracle: $(CONSTR)/oracle
+aller-retour: $(CONSTR)/aller_retour
 banc: $(CONSTR)/banc
 
 $(CONSTR)/oracle: $(ICI)/tests/oracle.c $(YAML_SRC) $(YAML_H)
 	@mkdir -p $(CONSTR)
 	$(CC) $(OPT_TESTS) -std=gnu99 $(AVERTISSEMENTS) $(VERSION_DEFS) $(INCLUDES) \
 	  $(ICI)/tests/oracle.c $(YAML_SRC) -o $@
+
+$(CONSTR)/aller_retour: $(ICI)/tests/aller_retour.c $(ICI)/commun/sha256.c $(COMMUN_H) $(YAML_SRC) $(YAML_H)
+	@mkdir -p $(CONSTR)
+	$(CC) $(OPT_TESTS) -std=gnu99 $(AVERTISSEMENTS) $(VERSION_DEFS) $(INCLUDES) \
+	  $(ICI)/tests/aller_retour.c $(ICI)/commun/sha256.c $(YAML_SRC) -o $@
 
 # libyaml compilé seul avec ses options Release ; -g sert au profilage (cachegrind, callgrind).
 OBJETS_YAML := $(patsubst $(SOURCE)/src/%.c,$(CONSTR)/banc-%.o,$(YAML_SRC))

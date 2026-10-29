@@ -1,0 +1,84 @@
+tache: libyaml-0003
+utilisateur: bidji29
+agent:
+  modele: "Claude Opus 5.5 (claude-opus-5-5)"
+  client: bee 0.1.0
+resume: "Oracle d'aller-retour de l'émetteur : corpus et 22 cas intégrés analysés, ré-émis, ré-analysés et comparés ; empreintes de la sortie émise figées."
+changement: >
+  Ajout de bee/tests/aller_retour.c : pour chaque document, analyse en flux d'événements A
+  (yaml_parser_parse), ré-émission de A par yaml_emitter_emit avec les réglages par défaut de
+  l'émetteur (ceux du banc : ni canonique, ni unicode, indentation 2, largeur 80), analyse de la
+  sortie T et comparaison du flux relu B à A, événement par événement. Une ligne par document :
+  sha256 de T, statut (ok, rejete pour une entrée invalide, echec), nom. bee/tests/lancer.sh lance
+  ce test en étape 4/4 et compare ces lignes à bee/tests/empreintes-aller-retour.txt (nouveau,
+  régénéré sur la base 1e90ffd, sources de libyaml identiques à upstream/master) ; un aller-retour
+  en échec fait échouer même avec --sans-empreintes, et --regenerer-empreintes refuse d'écrire si un
+  aller-retour échoue. bee/Makefile gagne la cible aller-retour (et l'ajoute à tout).
+
+
+  Comparé strictement : nombre, ordre et type des événements ; encodage ; directives %YAML et %TAG ;
+  indicateur implicite du début de document ; ancres et alias ; étiquettes et indicateur implicite
+  des collections ; style des collections (bloc/flow) ; octets et longueur des scalaires ;
+  plain_implicit et quoted_implicit des scalaires. Normalisations tolérées, et seulement elles,
+  chacune tirée d'une règle de src/emitter.c : N1 positions ignorées ; N2 style de scalaire,
+  seulement dans le sens où yaml_emitter_select_scalar_style le change quand le style demandé est
+  impossible (plain vers ' ou ", ' vers ", | ou > vers ", jamais l'inverse) ; N3 étiquette de
+  scalaire absente <-> « ! » si plain_implicit vaut 1 des deux côtés (l'émetteur écrit « ! » quand il
+  doit mettre entre guillemets un scalaire plain sans étiquette, et l'omet quand il l'écrit plain) ;
+  N4 fin de document implicite vers explicite (« ... » écrit en fin de flux après un scalaire bloc
+  qui garde ses lignes vides finales, et avant les directives du document suivant). Un début de
+  document implicite vers explicite a été envisagé puis écarté : l'analyseur ne produit un début
+  implicite qu'au premier document sans directive, et l'émetteur le garde, donc ce point reste strict.
+  La comparaison s'inspire de compare_events() de tests/run-emitter.c (libyaml, MIT), en plus strict
+  (celui-ci ignore tout style, l'encodage et les indicateurs de document).
+
+
+  Constat : sur le corpus (40 fichiers), l'aller-retour est exact et aucune normalisation ne sert
+  (seules les positions diffèrent), et aucune entrée n'est invalide. Pour que le choix de style de
+  l'émetteur et le statut « rejete » soient jugés en continu, aller_retour.c contient 22 petits cas
+  intégrés (option --internes, nommés interne/…) : N2, N3, N4, directives, étiquettes, UTF-16, clé de
+  plus de 128 caractères (clé complexe « ? »), repli d'un plain long, document vide, et 4 entrées
+  invalides. Chiffres : 62 documents, 58 ok, 4 rejetés, 0 échec ; 412 643 événements comparés ;
+  normalisations utilisées : 7 N2, 5 N3, 2 N4, toutes dans les cas intégrés. Durée : lancer.sh 7 à
+  9,6 s dans la sandbox compilation comprise (l'étape aller-retour seule : 0,3 s) ; l'étape CI
+  bee/ci/tests.sh rejouée (outillage de la base puis celui de la PR) : 19,7 s.
+
+
+  Mutations de src/emitter.c, dans des copies jetables hors du dépôt (jamais commitées), jugées par
+  bee/tests/lancer.sh --source <copie> : M1 plus de virgule entre éléments d'une séquence flow :
+  ÉCHEC, 4 fichiers du corpus en echec (ancres, flow, scalaires, tags ; « valeur du scalaire
+  différente », [x, y, z] relu comme « x y z »), échec aussi avec --sans-empreintes. M2 plus
+  d'étiquette « ! » quand un plain doit être mis entre guillemets : ÉCHEC, 5 cas intégrés en echec
+  (plain_implicit/quoted_implicit différents) ; sur le seul corpus, cette mutation passe inaperçue
+  (empreintes du corpus inchangées), d'où les cas intégrés. M3 indentation par défaut 4 au lieu de 2 :
+  aller-retour stable mais empreintes changées, ÉCHEC en mode normal, OK avec --sans-empreintes
+  (attendu). M4 ancres (&) plus écrites : ÉCHEC, ancres.yaml et 2 cas intégrés (« ancre différente »).
+  La correction actuelle est préservée : oracle.c inchangé, empreintes-reference.txt identique à
+  l'octet après régénération. Fichiers touchés : ceux de la tâche, plus empreintes-aller-retour.txt
+  (empreintes de référence du nouveau test) et ce manifeste. Petit écart d'outil relevé : bee
+  manifeste ne crée pas le dossier manifestes/ s'il manque (créé à la main ici).
+teste:
+  - "bee/sandbox/sans-docker.sh bee/tests/lancer.sh : OK (40 flux identiques à empreintes-reference.txt, 62 sorties identiques à empreintes-aller-retour.txt), 7 à 9,6 s compilation comprise, gcc 13.3, x86-64"
+  - "lancer.sh --regenerer-empreintes sur la base (empreintes-reference.txt inchangé à l'octet) et --sans-empreintes (OK)"
+  - "bee/ci/tests.sh rejoué sur deux clones (juges de la base 1e90ffd, PR 91fa157) : OK, 19,7 s"
+  - "bee/ci/tests_origine.sh (cmake + ctest) : 3/3 tests d'origine passés"
+  - "aller_retour compilé avec ASan + UBSan (gcc, -O1, détection de fuites) sur le corpus, les cas intégrés et 33 entrées écrites à la main (dont examples/*.yaml et regression-inputs/) : aucune erreur, aucune fuite ; empreintes du corpus identiques à la référence. lancer.sh n'a pas d'option --sanitiseurs : compilation manuelle via OPT_TESTS"
+  - "aller_retour compilé avec clang -O2 : empreintes identiques à la référence"
+  - "4 mutations de src/emitter.c dans des copies jetables (M1 à M4, voir changement) : les 4 font échouer lancer.sh ; M3 passe seulement avec --sans-empreintes, comme attendu"
+non_teste:
+  - "ARM64 : seulement x86-64 ici (la matrice de la CI couvre ARM64)"
+  - "API document (yaml_parser_load puis yaml_emitter_dump, dumper.c) : seule l'API événements est couverte ; une optimisation de dumper.c seul ne serait pas jugée par ce test, alors que le banc debit_emission passe par yaml_emitter_dump. Piste pour une tâche suivante (taille M : il faut normaliser les noms d'ancres et les étiquettes par défaut)"
+  - "Réglages non par défaut de l'émetteur (canonique, unicode, largeur, indentation, sauts CR/CRLF)"
+  - "La CI GitHub elle-même : l'étape tests.sh n'a été rejouée qu'en local ; le nouveau juge n'est pas dans la base, donc seule la seconde passe de tests.sh (outillage de la PR) l'exécute"
+  - "Pas de fuzzing de l'aller-retour (hors tâche)"
+doutes: >
+  N3 accepte aussi la disparition d'une étiquette « ! » sur un scalaire écrit plain : c'est le
+  comportement actuel de libyaml (selon la spécification, « ! x » est une chaîne et « x » se résout
+  comme plain), toléré ici parce que les deux indicateurs implicites restent égaux ; un changement de
+  ce côté ne serait vu que par l'empreinte. Plus largement, N2 et N3 laissent passer un émetteur qui
+  met plus de scalaires entre guillemets qu'avant : seule l'empreinte l'attrape, donc en mode
+  --sans-empreintes un tel changement passe. La couverture des normalisations repose sur 22 petits
+  cas intégrés, pas sur le corpus (generer.py est hors du périmètre) : une tâche de corpus pourrait
+  les y déplacer. Marge de durée : 19,7 s pour l'étape CI complète ici, sur une machine partagée à
+  2 cœurs ; à confirmer sur les machines de la CI.
+taille_reelle: S

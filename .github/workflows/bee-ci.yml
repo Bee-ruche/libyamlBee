@@ -4,11 +4,9 @@
 #   1. manifeste et taille : bee verifier-fork, avec l'outil du registre (branche main)
 #   2. compilation et tests d'origine de libyaml (cmake + ctest), x86-64 et ARM64
 #   3. déterminisme du flux d'événements (bee/tests, oracle + empreintes), x86-64 et ARM64
-#   4. banc A/B entrelacé : point de départ de la PR contre tête de la PR, 10 répétitions, Cachegrind
-#   5. verdict.json, publié en artefact « verdict » (lu par le workflow verdicts.yml du registre)
-#
-# Pas de job de fuzzing pour l'instant : le harnais de fuzzing différentiel est une tâche d'outillage
-# à construire par la ruche (docs/outillage.md du registre).
+#   4. fuzzing différentiel de l'analyseur (base contre PR), libFuzzer + ASan/UBSan, 10 minutes, x86-64
+#   5. banc A/B entrelacé : point de départ de la PR contre tête de la PR, 10 répétitions, Cachegrind
+#   6. verdict.json, publié en artefact « verdict » (lu par le workflow verdicts.yml du registre)
 #
 # Sécurité : identique à la CI de miniz. permissions contents: read, aucun secret, persist-credentials
 # false, déclencheur pull_request. Les juges (bee/) viennent de la BASE de la PR ; seules les sources
@@ -170,6 +168,55 @@ jobs:
           path: etats/
           if-no-files-found: warn
 
+  fuzzing:
+    name: Fuzzing 10 minutes (x86-64)
+    needs: manifeste
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Base de la PR (harnais ; historique complet pour le corpus de graines)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ env.BASE_SHA }}
+          path: base
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Tête de la PR
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ env.TETE_SHA }}
+          path: pr
+          persist-credentials: false
+      - name: Juges (bee/ de la base, ou de la PR en amorçage)
+        run: |
+          export base=base pr=pr base_sha="${BASE_SHA:?}" etats="${ETATS:?}"
+          eval "$BEE_JUGES"
+      - name: Outils (clang 18 et son runtime libFuzzer)
+        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends clang-18 libclang-rt-18-dev
+      # Entrées fautives, journaux et traces ne quittent JAMAIS la machine de CI (docs/securite.md du
+      # registre) : lancer.sh est en mode discret (empreintes seulement) et rejoue chaque entrée fautive
+      # sur la base ; un écart qui y existe déjà est signalé sans compter contre la PR. Le harnais est
+      # celui de la base ; seule la PR qui l'introduit, faute de harnais dans sa base, passe par le sien.
+      - name: Fuzzing différentiel de l'analyseur, 600 s
+        env:
+          CLANG: clang-18
+          BEE_FUZZ_SORTIES: ${{ runner.temp }}/sorties-fuzz
+          BEE_FUZZ_DISCRET: "1"
+        run: |
+          harnais=base/bee/fuzz/lancer.sh
+          if [ ! -f "$harnais" ]; then
+            echo "::notice::La base n'a pas encore de harnais de fuzzing : celui de la PR est utilisé."
+            harnais=pr/bee/fuzz/lancer.sh
+          fi
+          base/bee/ci/etape.sh "$ETATS" fuzzing bash "$harnais" 600 --source pr --reference base
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: etat-fuzzing
+          path: etats/
+          if-no-files-found: warn
+
   banc-ab:
     name: Banc A/B
     needs: manifeste
@@ -219,7 +266,7 @@ jobs:
 
   verdict:
     name: Verdict
-    needs: [manifeste, compilation-et-tests, banc-ab]
+    needs: [manifeste, compilation-et-tests, fuzzing, banc-ab]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 10

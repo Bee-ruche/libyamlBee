@@ -48,6 +48,7 @@ ETAPES = [
     ("compilation_arm64", "Compilation et tests d'origine (ARM64)", "compilation-et-tests"),
     ("determinisme_x86_64", "Déterminisme du flux d'événements (x86-64)", "compilation-et-tests"),
     ("determinisme_arm64", "Déterminisme du flux d'événements (ARM64)", "compilation-et-tests"),
+    ("fuzzing", "Fuzzing différentiel de l'analyseur (x86-64)", "fuzzing"),
     ("banc_ab", "Banc A/B", "banc-ab"),
 ]
 METRIQUES = ["debit_analyse", "debit_chargement", "debit_emission", "memoire_max_ko"]

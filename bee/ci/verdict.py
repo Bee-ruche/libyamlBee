@@ -7,7 +7,8 @@ Entrées :
   --artefacts   dossier où les artefacts « etat-* » ont été téléchargés : fichiers d'état <etape>.txt
                 (« succes » / « echec », écrits par bee/ci/etape.sh), rapport ab.json d'ab.py,
                 CONTRIBUTION.yaml de la PR et tache.yaml du registre. Ce sont des DONNÉES : lues, jamais exécutées.
-                Chaque fichier n'est lu qu'à la racine de l'artefact de son job (etat-banc, etat-manifeste).
+                Chaque fichier n'est lu qu'à la racine de l'artefact de son job (etat-banc, etat-manifeste), chaque
+                fichier d'état que dans le dossier d'état de son job (DOSSIERS_ETATS) ; jamais un lien symbolique.
   --depot, --base, --tete   pour compter les lignes modifiées (git diff --numstat).
 
 Sortie (--sortie, défaut verdict.json), avec au minimum :
@@ -35,7 +36,6 @@ Usage local (simulation) : python3 bee/ci/verdict.py --etats DOSSIER --ab ab.jso
 
 import argparse
 import fnmatch
-import glob
 import json
 import os
 import subprocess
@@ -55,6 +55,16 @@ ETAPES = [
     ("fuzzing", "Fuzzing différentiel de l'analyseur (x86-64)", "fuzzing"),
     ("banc_ab", "Banc A/B", "banc-ab"),
 ]
+# Dossier d'état de chaque étape dans les artefacts : celui où le job qui l'écrit le dépose (bee-ci.yml : etats/ à la
+# racine de son artefact, ou sous etats/ quand l'artefact porte aussi ses données). Une étape n'est lue que là, jamais
+# dans un autre artefact ni plus bas.
+DOSSIERS_ETATS = {
+    "manifeste_et_taille": "etat-manifeste/etats",
+    "compilation_x86_64": "etat-tests-x86_64", "determinisme_x86_64": "etat-tests-x86_64",
+    "compilation_arm64": "etat-tests-arm64", "determinisme_arm64": "etat-tests-arm64",
+    "fuzzing": "etat-fuzzing",
+    "banc_ab": "etat-banc/etats",
+}
 # Repris de projets/libyaml.yaml (chemins_hors_decompte) dans le registre Bee, plus le manifeste, dans ses deux dossiers.
 CHEMINS_HORS_DECOMPTE = ["bee/**", "tests/**", "CONTRIBUTION.yaml", "manifests/**", "manifestes/**"]
 
@@ -67,19 +77,31 @@ def lire_texte(chemin):
         return None
 
 
-def etats_depuis(dossiers):
-    """Renvoie (états des étapes, amorçage signalé par au moins un job)."""
+def ordinaire(chemin):
+    """Un fichier ordinaire : ni lien symbolique, ni dossier."""
+    return bool(chemin) and os.path.isfile(chemin) and not os.path.islink(chemin)
+
+
+def etats_depuis(dossier_etats, artefacts):
+    """Renvoie (états des étapes, amorçage signalé par au moins un job). Dans --etats (le dossier du job verdict, ou
+    d'une simulation), chaque <etape>.txt à sa racine ; dans les artefacts, chaque <etape>.txt seulement dans le
+    dossier d'état du job qui l'écrit (DOSSIERS_ETATS), « juges » et « amorcage » dans chacun de ces dossiers."""
+    noms = [e for e, _, _ in ETAPES] + ["amorcage"]
+    chemins = [os.path.join(dossier_etats, nom + ".txt") for nom in noms] if dossier_etats else []
+    for nom in noms if artefacts else []:
+        if nom in ("juges", "amorcage"):
+            dossiers = sorted(set(DOSSIERS_ETATS.values()))
+        else:
+            dossiers = [DOSSIERS_ETATS[nom]] if nom in DOSSIERS_ETATS else []
+        chemins += [os.path.join(artefacts, dossier, nom + ".txt") for dossier in dossiers]
     etats, amorcage = {}, False
-    for dossier in dossiers:
-        for chemin in glob.glob(os.path.join(dossier, "**", "*.txt"), recursive=True):
-            nom = os.path.basename(chemin)[:-4]
-            if nom == "amorcage":
-                amorcage = amorcage or lire_texte(chemin) == "oui"
-            elif any(nom == e for e, _, _ in ETAPES):
-                valeur = lire_texte(chemin)
-                # Un « echec » l'emporte toujours sur un « succes » du même nom.
-                if valeur in ("succes", "echec") and etats.get(nom) != "echec":
-                    etats[nom] = valeur
+    for chemin in filter(ordinaire, chemins):
+        nom, valeur = os.path.basename(chemin)[:-4], lire_texte(chemin)
+        if nom == "amorcage":
+            amorcage = amorcage or valeur == "oui"
+        # Un « echec » l'emporte toujours sur un « succes » du même nom.
+        elif valeur in ("succes", "echec") and etats.get(nom) != "echec":
+            etats[nom] = valeur
     return etats, amorcage
 
 
@@ -135,16 +157,17 @@ def lignes_modifiees(depot, base, tete):
 
 
 def trouver_dans(artefacts, artefact, nom):
-    """Le fichier `nom` à la racine de l'artefact du job qui le produit : jamais celui d'un autre job ou d'un sous-dossier."""
+    """Le fichier `nom` à la racine de l'artefact du job qui le produit : jamais celui d'un autre job ou d'un sous-dossier,
+    et jamais un lien symbolique."""
     chemin = os.path.join(artefacts, artefact, nom) if artefacts else None
-    return chemin if chemin and os.path.isfile(chemin) else None
+    return chemin if ordinaire(chemin) else None
 
 
 def main():
     analyseur = argparse.ArgumentParser(description="Assemble verdict.json pour la CI Bee du fork libyaml.")
     analyseur.add_argument("--jobs", help="toJSON(needs) du workflow : résultats des jobs (source de vérité de « ci »)")
     analyseur.add_argument("--artefacts", help="dossier des artefacts etat-* téléchargés")
-    analyseur.add_argument("--etats", help="dossier des fichiers <etape>.txt (simulation locale)")
+    analyseur.add_argument("--etats", help="dossier des fichiers <etape>.txt, à sa racine (celui du job verdict, ou une simulation locale)")
     analyseur.add_argument("--ab", help="rapport JSON d'ab.py (défaut : ab.json de l'artefact etat-banc)")
     analyseur.add_argument("--manifeste", help="CONTRIBUTION.yaml de la PR (donnée)")
     analyseur.add_argument("--tache", help="tâche du registre (défaut : tache.yaml de l'artefact etat-manifeste)")
@@ -158,7 +181,7 @@ def main():
     if args.jobs:
         with open(args.jobs, encoding="utf-8") as f:
             jobs = json.load(f) or {}
-    etats, amorcage = etats_depuis([d for d in (args.etats, args.artefacts) if d])
+    etats, amorcage = etats_depuis(args.etats, args.artefacts)
     chemin_ab = args.ab or trouver_dans(args.artefacts, "etat-banc", "ab.json")
     chemin_manifeste = args.manifeste or trouver_dans(args.artefacts, "etat-manifeste", "CONTRIBUTION.yaml")
     chemin_tache = args.tache or trouver_dans(args.artefacts, "etat-manifeste", "tache.yaml")

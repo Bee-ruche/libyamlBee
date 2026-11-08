@@ -24,7 +24,7 @@ import sys
 
 import yaml
 
-from vocabulaire import Illisible, lire_manifeste, lire_tache, metriques_du_projet
+from vocabulaire import METRIQUES, Illisible, lire_manifeste, lire_tache, metriques_du_projet
 
 PROJET = "libyaml"
 MOTIF_TACHE = re.compile(r"^" + PROJET + r"-[0-9]{4}$")
@@ -61,8 +61,8 @@ def main():
     try:
         with open(args.manifeste, encoding="utf-8") as f:
             manifeste = yaml.safe_load(f)
-    except yaml.YAMLError as e:
-        echouer(f"manifeste illisible : {e}")
+    except (OSError, ValueError, yaml.YAMLError) as e:  # ValueError : un manifeste qui n'est pas de l'UTF-8
+        echouer(f"manifeste illisible (UTF-8 et YAML attendus) : {type(e).__name__} : {e}")
     try:
         tache = lire_manifeste(manifeste).get("tache")
     except Illisible as e:
@@ -85,6 +85,9 @@ def main():
         valeurs = lire_tache(donnees, metriques)
     except Illisible as e:
         echouer(f"tâche {tache} illisible : {e}")
+    if valeurs["metrique"] is not None and valeurs["metrique"] not in METRIQUES:
+        echouer(f"la tâche {tache} vise la métrique « {valeurs['metrique']} », que le registre connaît mais que le banc de "
+                f"libyamlBee ne mesure pas (bee/bench/ab.py : {', '.join(METRIQUES)}) : verdict.py ne pourrait pas la juger")
     shutil.copyfile(chemin, args.sortie)
     print(f"tache={tache}")
     print(f"type={valeurs['type']}")

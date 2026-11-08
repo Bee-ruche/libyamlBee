@@ -7,6 +7,8 @@ Entrées :
   --artefacts   dossier où les artefacts « etat-* » ont été téléchargés : fichiers d'état <etape>.txt
                 (« succes » / « echec », écrits par bee/ci/etape.sh), rapport ab.json d'ab.py,
                 CONTRIBUTION.yaml de la PR et tache.yaml du registre. Ce sont des DONNÉES : lues, jamais exécutées.
+                Chaque fichier n'est lu qu'à la racine de l'artefact du job qui le produit : ab.json dans etat-banc,
+                CONTRIBUTION.yaml et tache.yaml dans etat-manifeste.
   --depot, --base, --tete   pour compter les lignes modifiées (git diff --numstat).
 
 Sortie (--sortie, défaut verdict.json), avec au minimum :
@@ -134,15 +136,9 @@ def lignes_modifiees(depot, base, tete):
 
 
 def trouver_dans(artefacts, artefact, nom):
-    """Fichier d'un artefact précis (etat-manifeste) : jamais celui d'un autre job."""
-    return trouver(os.path.join(artefacts, artefact), nom) if artefacts else None
-
-
-def trouver(dossier, nom):
-    if not dossier:
-        return None
-    trouves = sorted(glob.glob(os.path.join(dossier, "**", nom), recursive=True))
-    return trouves[0] if trouves else None
+    """Le fichier `nom` à la racine de l'artefact du job qui le produit : jamais celui d'un autre job ou d'un sous-dossier."""
+    chemin = os.path.join(artefacts, artefact, nom) if artefacts else None
+    return chemin if chemin and os.path.isfile(chemin) else None
 
 
 def main():
@@ -150,9 +146,9 @@ def main():
     analyseur.add_argument("--jobs", help="toJSON(needs) du workflow : résultats des jobs (source de vérité de « ci »)")
     analyseur.add_argument("--artefacts", help="dossier des artefacts etat-* téléchargés")
     analyseur.add_argument("--etats", help="dossier des fichiers <etape>.txt (simulation locale)")
-    analyseur.add_argument("--ab", help="rapport JSON d'ab.py (défaut : ab.json trouvé dans --artefacts)")
+    analyseur.add_argument("--ab", help="rapport JSON d'ab.py (défaut : ab.json de l'artefact etat-banc)")
     analyseur.add_argument("--manifeste", help="CONTRIBUTION.yaml de la PR (donnée)")
-    analyseur.add_argument("--tache", help="tâche du registre (défaut : tache.yaml trouvé dans --artefacts)")
+    analyseur.add_argument("--tache", help="tâche du registre (défaut : tache.yaml de l'artefact etat-manifeste)")
     analyseur.add_argument("--depot", help="clone du fork, pour compter les lignes modifiées")
     analyseur.add_argument("--base")
     analyseur.add_argument("--tete")
@@ -164,7 +160,7 @@ def main():
         with open(args.jobs, encoding="utf-8") as f:
             jobs = json.load(f) or {}
     etats, amorcage = etats_depuis([d for d in (args.etats, args.artefacts) if d])
-    chemin_ab = args.ab or trouver(args.artefacts, "ab.json")
+    chemin_ab = args.ab or trouver_dans(args.artefacts, "etat-banc", "ab.json")
     chemin_manifeste = args.manifeste or trouver_dans(args.artefacts, "etat-manifeste", "CONTRIBUTION.yaml")
     chemin_tache = args.tache or trouver_dans(args.artefacts, "etat-manifeste", "tache.yaml")
     manifeste, etat_manifeste = charger_yaml(chemin_manifeste)

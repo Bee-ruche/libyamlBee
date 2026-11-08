@@ -32,6 +32,10 @@ if ! printf '%s' "$manifeste" | grep -Eq '^(manifests|manifestes)/libyaml-[0-9]{
   echo "Nom de manifeste invalide : manifests/libyaml-NNNN.yaml (ou manifestes/libyaml-NNNN.yaml) attendu." >&2
   exit 1
 fi
+if [ -L "$pr/$manifeste" ] || { [ -e "$pr/$manifeste" ] && [ ! -f "$pr/$manifeste" ]; }; then
+  echo "Le manifeste $manifeste doit être un fichier ordinaire (ni lien symbolique, ni dossier)." >&2
+  exit 1
+fi
 echo "Manifeste : $manifeste"
 
 statut=0

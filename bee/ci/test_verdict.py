@@ -134,8 +134,8 @@ OUTIL_EN = faux_outil("--registry", [("check-fork", OPTIONS_EN)])
 
 def ecrire(racine, chemin, texte):
     os.makedirs(os.path.dirname(os.path.join(racine, chemin)) or racine, exist_ok=True)
-    with open(os.path.join(racine, chemin), "w", encoding="utf-8") as f:
-        f.write(texte)
+    with open(os.path.join(racine, chemin), "wb") as f:
+        f.write(texte if isinstance(texte, bytes) else texte.encode("utf-8"))
 
 
 def lire(chemin):
@@ -273,7 +273,7 @@ class JobManifeste(unittest.TestCase):
         return self.git("rev-parse", "HEAD")
 
     def lancer(self, manifestes, taches=(("taches", TACHE_FR),), outils=(("outils", OUTIL_FR),),
-               projets=(("projets", PROJET_FR),)):
+               projets=(("projets", PROJET_FR),), liens=()):
         for dossier, texte in taches:
             ecrire(self.registre, f"{dossier}/libyaml/libyaml-0050.yaml", texte)
         for dossier, texte in outils:
@@ -282,6 +282,9 @@ class JobManifeste(unittest.TestCase):
             ecrire(self.registre, f"{dossier}/libyaml.yaml", texte)
         for chemin, texte in manifestes:
             ecrire(self.pr, chemin, texte)
+        for chemin, cible in liens:
+            os.makedirs(os.path.dirname(os.path.join(self.pr, chemin)) or self.pr, exist_ok=True)
+            os.symlink(cible, os.path.join(self.pr, chemin))
         ecrire(self.pr, "src/parser.c", "int y;\n")
         tete = self.commit()
         sortie, copie = os.path.join(self.d, "sortie"), os.path.join(self.d, "copie.yaml")
@@ -365,16 +368,49 @@ class JobManifeste(unittest.TestCase):
                 self.refus("tâche libyaml-0050", [("manifestes/libyaml-0050.yaml", MANIFESTE_FR)], taches=((dossier, texte),))
                 self.assertIn("illisible", self.sortie_job)
 
-    def test_metriques_du_descripteur_du_registre(self):
-        """La liste fermée vient du descripteur du registre, pas d'une liste du fork : une métrique qu'il ne connaît
-        pas est refusée, une qu'il est seul à connaître passe tache.py (verdict.py la refusera s'il ne la juge pas)."""
+    def test_metrique_connue_du_registre_et_mesuree_par_le_banc(self):
+        """La métrique doit être dans le descripteur du registre ET dans celles que le banc mesure : une métrique que
+        le registre ne liste pas est refusée ; une qu'il liste mais que le banc ne mesure pas aussi, dès cette étape
+        (sans quoi elle ne serait refusée qu'au verdict, sous un autre nom)."""
         seule = PROJET_EN.split("metrics:")[0] + "metrics:\n  - {id: debit_analyse, unit: MB/s, direction: higher}\n"
         self.refus("inconnue", [("manifestes/libyaml-0050.yaml", MANIFESTE_FR)], projets=(("projects", seule),))
+        for projets, tache in ((("projets", PROJET_FR.replace("id: debit_emission", "id: debit_nouveau")),
+                                TACHE_FR.replace("debit_emission", "debit_nouveau")),
+                               (("projects", PROJET_EN.replace("direction: lower}\n", "direction: lower}\n  - {id: latence, unit: ms, direction: lower}\n")),
+                                TACHE_EN.replace("debit_emission", "latence"))):
+            with self.subTest(projets=projets[0]):
+                self.setUp()
+                self.refus("ne mesure pas", [("manifestes/libyaml-0050.yaml", MANIFESTE_FR)], projets=(projets,),
+                           taches=(("taches", tache),))
         self.setUp()
-        nouvelle = PROJET_FR.replace("id: debit_emission", "id: debit_nouveau")
-        code, sortie = self.lancer([("manifestes/libyaml-0050.yaml", MANIFESTE_FR)], projets=(("projets", nouvelle),),
-                                   taches=(("taches", TACHE_FR.replace("debit_emission", "debit_nouveau")),))
-        self.assertEqual((code, self.sorties.get("metrique")), (0, "debit_nouveau"), sortie)
+        code, sortie = self.lancer([("manifestes/libyaml-0050.yaml", MANIFESTE_FR)],
+                                   taches=(("taches", TACHE_FR.replace("debit_emission", "memoire_max_ko")),))
+        self.assertEqual((code, self.sorties.get("metrique")), (0, "memoire_max_ko"), sortie)
+
+    def test_manifeste_illisible(self):
+        """Un manifeste qui n'est pas de l'UTF-8, ou pas du YAML : échec net, sans trace d'exception."""
+        for texte in (MANIFESTE_FR.encode("utf-8").replace(b"resume: r", b"resume: \xff\xfe r"),
+                      MANIFESTE_FR.encode("latin-1", "replace") + "doutes_bis: é\n".encode("latin-1"),
+                      b"tache: [libyaml-0050\n"):
+            with self.subTest(texte=texte[-30:]):
+                self.setUp()
+                self.refus("manifeste illisible", [("manifestes/libyaml-0050.yaml", texte)])
+                self.assertNotIn("Traceback", self.sortie_job)
+
+    def test_manifeste_fichier_ordinaire(self):
+        """Un manifeste est un fichier ordinaire : un lien symbolique (vers le dépôt ou hors de lui) ou un dossier
+        est refusé avant toute lecture."""
+        for manifestes, liens in (([("hors.yaml", MANIFESTE_FR)], [("manifestes/libyaml-0050.yaml", "../hors.yaml")]),
+                                  ([], [("manifests/libyaml-0050.yaml", "DEHORS")]),
+                                  ([("hors.yaml", MANIFESTE_FR)], [("CONTRIBUTION.yaml", "hors.yaml")]),
+                                  ([("CONTRIBUTION.yaml/x", "a\n")], [])):
+            with self.subTest(manifestes=manifestes, liens=liens):
+                self.setUp()
+                ecrire(self.d, "dehors.yaml", MANIFESTE_EN)  # hors du dépôt
+                liens = [(c, os.path.join(self.d, "dehors.yaml") if cible == "DEHORS" else cible) for c, cible in liens]
+                code, sortie = self.lancer(manifestes, liens=liens)
+                self.assertEqual((code, self.journal, self.copie, self.sorties), (1, [], None, {}), sortie)
+                self.assertIn("doit être un fichier ordinaire", sortie)
 
     def test_descripteur_illisible_echoue(self):
         for projets, attendu in (((("projets", PROJET_FR.replace("licence:", "license:")),), "mêle les deux vocabulaires"),
@@ -451,9 +487,11 @@ class JobManifeste(unittest.TestCase):
         self.assertEqual((code, len(self.journal)), (1, 1), sortie)
 
 
-def rapport_ab():
-    """Rapport d'ab.py : un gain différent par métrique, pour voir laquelle le verdict a retenue."""
-    gains = {"debit_analyse": 0.01, "debit_chargement": 0.02, "debit_emission": 0.05, "memoire_max_ko": 0.0}
+def rapport_ab(facteur=1):
+    """Rapport d'ab.py : un gain différent par métrique, pour voir laquelle le verdict a retenue (et d'où vient le
+    rapport : `facteur` multiplie les gains d'un rapport déposé ailleurs)."""
+    gains = {m: facteur * g for m, g in
+             {"debit_analyse": 0.01, "debit_chargement": 0.02, "debit_emission": 0.05, "memoire_max_ko": 0.0}.items()}
     return {"metriques": {m: {"gain": g, "au_dela_du_bruit": g >= 0.02, "degradation_au_dela_du_bruit": False,
                               "test_du_signe": {}} for m, g in gains.items()},
             "mesures": {"A": {m: 100.0 for m in gains}, "B": {m: 100.0 * (1 + g) for m, g in gains.items()}},
@@ -464,12 +502,13 @@ class DeuxVocabulairesDansLeVerdict(unittest.TestCase):
     """verdict.py : la métrique de la copie de la tâche (artefact etat-manifeste), en anglais ou en français ;
     illisible, absente en CI ou venue d'un autre artefact : jamais un défaut, jamais la métrique de la PR."""
 
-    def executer(self, jobs=JOBS_OK, tache=None, manifeste=None, ailleurs=()):
+    def executer(self, jobs=JOBS_OK, tache=None, manifeste=None, ailleurs=(), ab=True):
         with tempfile.TemporaryDirectory() as d:
             artefacts = os.path.join(d, "artefacts")
             for etape in ETAPES:
                 ecrire(artefacts, f"x/etats/{etape}.txt", "succes\n")
-            ecrire(artefacts, "etat-banc/ab.json", json.dumps(rapport_ab()))
+            if ab:
+                ecrire(artefacts, "etat-banc/ab.json", json.dumps(rapport_ab()))
             for nom, contenu in (("tache.yaml", tache), ("CONTRIBUTION.yaml", manifeste)):
                 if contenu is not None:
                     ecrire(artefacts, f"etat-manifeste/{nom}", contenu)
@@ -511,6 +550,23 @@ class DeuxVocabulairesDansLeVerdict(unittest.TestCase):
         v = self.executer(jobs=None, tache=None, ailleurs=[("etat-tests-x86_64/tache.yaml", autre),
                                                            ("etat-fuzzing/CONTRIBUTION.yaml", MANIFESTE_FR)])
         self.assertEqual((v["ci"], v["metrique"], v["gain"]), ("verte", None, None))
+        v = self.executer(tache=None, ailleurs=[("etat-manifeste/etats/tache.yaml", TACHE_EN)])  # racine seulement
+        self.assertEqual((v["ci"], v["etape_en_echec"], v["metrique"]), ("rouge", "Manifeste et taille", None))
+
+    def test_rapport_ab_seulement_dans_etat_banc(self):
+        """ab.json n'est lu qu'à la racine de l'artefact du banc (etat-banc) : celui d'un autre artefact ou d'un
+        sous-dossier, même rangé avant dans l'ordre alphabétique, n'est jamais lu."""
+        faux = json.dumps(rapport_ab(facteur=10))
+        ailleurs = [("etat-banc/AAA/ab.json", faux), ("etat-banc/etats/ab.json", faux), ("etat-fuzzing/ab.json", faux),
+                    ("etat-tests-x86_64/ab.json", faux), ("etat-manifeste/ab.json", faux)]
+        v = self.executer(tache=TACHE_FR, ailleurs=ailleurs)
+        self.assertEqual((v["ci"], v["metrique"], v["gain"], v["mesures"]["B"]["debit_emission"]),
+                         ("verte", "debit_emission", 0.05, 105.0))
+        for jobs in (JOBS_OK, None):
+            with self.subTest(ci=jobs is not None):
+                v = self.executer(jobs=jobs, tache=TACHE_FR, ailleurs=ailleurs, ab=False)
+                self.assertEqual((v["metrique"], v["gain"], v["au_dela_du_bruit"], v["mesures"]["B"]["debit_emission"]),
+                                 ("debit_emission", None, False, None))
 
     def test_metrique_null_jamais_celle_du_manifeste(self):
         tache = TACHE_EN.replace("metric: debit_emission", "metric: null").replace("optimization", "test")
@@ -589,11 +645,16 @@ class EtapesDuWorkflow(unittest.TestCase):
 
     def test_manifeste_conserve_des_deux_dossiers(self):
         script = self.script("Conserver le manifeste")
-        for chemin, garde in (("manifests/libyaml-0050.yaml", True), ("manifestes/libyaml-0050.yaml", True),
-                              ("CONTRIBUTION.yaml", True), ("manifests/libyaml-50.yaml", False),
-                              ("autre/libyaml-0050.yaml", False), ("manifests/../tache.yaml", False)):
-            with self.subTest(chemin=chemin), tempfile.TemporaryDirectory() as d:
-                ecrire(d, "pr/" + chemin, "tache: libyaml-0050\n")
+        for chemin, garde, lien in (("manifests/libyaml-0050.yaml", True, False), ("manifestes/libyaml-0050.yaml", True, False),
+                                    ("CONTRIBUTION.yaml", True, False), ("manifests/libyaml-50.yaml", False, False),
+                                    ("autre/libyaml-0050.yaml", False, False), ("manifests/../tache.yaml", False, False),
+                                    # un manifeste est un fichier ordinaire : un lien symbolique n'est pas copié
+                                    ("manifests/libyaml-0050.yaml", False, True), ("CONTRIBUTION.yaml", False, True)):
+            with self.subTest(chemin=chemin, lien=lien), tempfile.TemporaryDirectory() as d:
+                ecrire(d, "dehors.yaml" if lien else "pr/" + chemin, "tache: libyaml-0050\n")
+                if lien:
+                    os.makedirs(os.path.dirname(os.path.join(d, "pr", chemin)), exist_ok=True)
+                    os.symlink(os.path.join(d, "dehors.yaml"), os.path.join(d, "pr", chemin))
                 env = dict(os.environ, MANIFESTE=chemin, ETATS=os.path.join(d, "etats"))
                 r = subprocess.run(["bash", "-e", "-c", script], cwd=d, capture_output=True, text=True, env=env)
                 self.assertEqual(r.returncode, 0, r.stderr)

@@ -118,9 +118,11 @@ jobs:
           MANIFESTE: ${{ steps.manifeste.outputs.manifeste }}
         run: |
           mkdir -p donnees
-          # Nom validé par bee/ci/manifeste.sh (manifests/ ou manifestes/libyaml-NNNN.yaml, ou CONTRIBUTION.yaml).
+          # Nom validé par bee/ci/manifeste.sh (manifests/ ou manifestes/libyaml-NNNN.yaml, ou CONTRIBUTION.yaml) ;
+          # un manifeste est un fichier ordinaire : un lien symbolique n'est pas copié.
           case "$MANIFESTE" in
-            manifests/libyaml-[0-9][0-9][0-9][0-9].yaml|manifestes/libyaml-[0-9][0-9][0-9][0-9].yaml|CONTRIBUTION.yaml) cp "pr/$MANIFESTE" donnees/CONTRIBUTION.yaml 2>/dev/null || true ;;
+            manifests/libyaml-[0-9][0-9][0-9][0-9].yaml|manifestes/libyaml-[0-9][0-9][0-9][0-9].yaml|CONTRIBUTION.yaml)
+              if [ -f "pr/$MANIFESTE" ] && [ ! -L "pr/$MANIFESTE" ]; then cp "pr/$MANIFESTE" donnees/CONTRIBUTION.yaml 2>/dev/null || true; fi ;;
           esac
           cp -r "$ETATS" donnees/etats 2>/dev/null || true
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

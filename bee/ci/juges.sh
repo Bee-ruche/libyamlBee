@@ -13,7 +13,7 @@
 # Le workflow .github/workflows/bee-ci.yml contient une copie identique de la logique ci-dessous
 # (variable BEE_JUGES, exécutée par l'étape « Juges » de chaque job), car à l'amorçage la base ne
 # contient pas encore ce script. Les deux copies doivent rester identiques ; contrairement au fork
-# miniz, ce fork n'a pas encore de test qui le vérifie (bee/ci/test_verdict.py manque).
+# miniz, ce fork n'a pas encore de test qui le vérifie (bee/ci/test_verdict.py ne le couvre pas).
 set -euo pipefail
 
 if [ $# -ne 3 ]; then

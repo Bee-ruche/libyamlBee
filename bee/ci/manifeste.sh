@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # Étape 1 de la CI Bee : manifeste et taille.
 #
-# 1. Trouve le manifeste de la PR : manifestes/<tâche>.yaml, le seul fichier de manifestes/ que la PR ajoute
+# 1. Trouve le manifeste de la PR : manifests/ ou manifestes/<tâche>.yaml, le seul fichier de ces dossiers que la PR ajoute
 #    ou modifie (sinon l'ancien CONTRIBUTION.yaml à la racine) ; lit la tâche qu'il désigne (donnée de la
-#    PR) et la retrouve dans le registre.
-# 2. Lance « bee verifier-fork », l'outil du registre (branche main) : manifeste valide, plafond de
+#    PR) et la retrouve dans le registre (tache.py : registre et manifeste en français ou en anglais).
+# 2. Lance « bee verifier-fork » ou « check-fork » (verifier_fork.py, noms lus dans son --help) : manifeste valide, plafond de
 #    lignes modifiées (R1), chemins juges intacts pour une optimisation (commandement 3), aucun binaire.
 #
 # Usage : bee/ci/manifeste.sh <clone_pr> <clone_registre> [python]
-#   python : interpréteur qui a PyYAML et jsonschema (outils/requirements.txt du registre).
+#   python : interpréteur qui a PyYAML et jsonschema (tools/requirements.txt du registre, ou outils/).
 # Variables : BASE_SHA et TETE_SHA (obligatoires), AUTEUR (auteur de la PR, facultatif),
 #             GITHUB_OUTPUT (facultatif : les valeurs de la tâche y sont ajoutées),
 #             BEE_SORTIE_TACHE (copie de la tâche, défaut tache.yaml).
@@ -22,14 +22,14 @@ py="${3:-python3}"
 sortie="${BEE_SORTIE_TACHE:-tache.yaml}"
 infos="$(mktemp)"
 
-mapfile -t manifestes < <(git -C "$pr" diff --name-only --no-renames --diff-filter=AM "$BASE_SHA...$TETE_SHA" -- 'manifestes/*')
+mapfile -t manifestes < <(git -C "$pr" diff --name-only --no-renames --diff-filter=AM "$BASE_SHA...$TETE_SHA" -- 'manifests/*' 'manifestes/*')
 if [ "${#manifestes[@]}" -gt 1 ]; then
   echo "La PR ajoute ou modifie plusieurs manifestes (${manifestes[*]}) : une PR, une tâche." >&2
   exit 1
 fi
 manifeste="${manifestes[0]:-CONTRIBUTION.yaml}"
-if ! printf '%s' "$manifeste" | grep -Eq '^(manifestes/libyaml-[0-9]{4}\.yaml|CONTRIBUTION\.yaml)$'; then
-  echo "Nom de manifeste invalide : manifestes/libyaml-NNNN.yaml attendu." >&2
+if ! printf '%s' "$manifeste" | grep -Eq '^(manifests|manifestes)/libyaml-[0-9]{4}\.yaml$|^CONTRIBUTION\.yaml$'; then
+  echo "Nom de manifeste invalide : manifests/libyaml-NNNN.yaml (ou manifestes/libyaml-NNNN.yaml) attendu." >&2
   exit 1
 fi
 echo "Manifeste : $manifeste"
@@ -48,5 +48,5 @@ options=()
 if [ -n "${AUTEUR:-}" ]; then
   options+=(--auteur "$AUTEUR")
 fi
-"$py" "$registre/outils/bee.py" --registre "$registre" verifier-fork --tache "$tache" \
+"$py" "$ICI/verifier_fork.py" "$registre" --tache "$tache" \
   --base "$BASE_SHA" --tete "$TETE_SHA" --depot "$pr" ${options[@]+"${options[@]}"}

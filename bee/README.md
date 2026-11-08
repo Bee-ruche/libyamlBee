@@ -27,9 +27,10 @@ bee/sandbox/sans-docker.sh make -C bee oracle    # une commande
 bee/sandbox/sans-docker.sh bash                  # une session
 ```
 
-Le script lance la commande à la racine du dépôt, sans réseau, sans les variables d'environnement de
-l'utilisateur (jetons, proxy) et avec un dossier personnel vide (`~/.config/gh` est masqué). Il exige
-les espaces de noms utilisateur (`unshare -r`) ; s'ils sont refusés, il le dit. Le fork n'a pas encore
+Le script lance la commande à la racine du dépôt, sans réseau, sans voir les processus de la machine
+(espace de noms PID, avec son propre `/proc`), sans les variables d'environnement de l'utilisateur
+(jetons, proxy), avec un dossier personnel vide (`~/.config/gh` est masqué) et un `/tmp` vide, à elle.
+Il exige les espaces de noms utilisateur et PID (`unshare -r --pid`) ; s'ils sont refusés, il le dit. Le fork n'a pas encore
 d'image Docker (à construire par la ruche, sur le modèle de `bee/sandbox/Dockerfile` de minizBee).
 
 ## Déterminisme (correction)

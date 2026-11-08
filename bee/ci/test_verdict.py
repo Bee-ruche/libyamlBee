@@ -705,7 +705,7 @@ class EtapesDuWorkflow(unittest.TestCase):
 
 class JobOutillagePr(unittest.TestCase):
     """Job « Tests de l'outillage de CI de la PR » de bee-ci.yml (libyaml-0022, sur le modèle de minizBee) : quand la PR
-    modifie bee/ci/ ou ce workflow, il lance son bee/ci/test_verdict.py dans la sandbox de la base ; code de la PR, donc
+    modifie bee/ci/, bee/sandbox/ ou ce workflow, il lance son bee/ci/test_verdict.py dans la sandbox de la base ; code de la PR, donc
     lecture seule, ni artefact ni sortie : seul son résultat compte, et le verdict le compte (needs)."""
 
     executer = DeuxVocabulairesDansLeVerdict.executer
@@ -734,7 +734,7 @@ class JobOutillagePr(unittest.TestCase):
             if i < i_juges:
                 self.assertNotIn("base/bee", e.get("run", ""), noms[i])
         etape = job["steps"][-1]["run"]
-        self.assertIn('git -C pr diff --quiet "$BASE_SHA...$TETE_SHA" -- bee/ci .github/workflows/bee-ci.yml', etape)
+        self.assertIn('git -C pr diff --quiet "$BASE_SHA...$TETE_SHA" -- bee/ci bee/sandbox .github/workflows/bee-ci.yml', etape)
         self.assertIn("cd pr && ../base/bee/sandbox/sans-docker.sh /usr/bin/python3 bee/ci/test_verdict.py", etape)
         self.assertLess(etape.index("sudo systemctl stop docker.socket docker\n"), etape.index("../base/bee/sandbox/sans-docker.sh"))
         self.assertNotRegex(etape, r"(python3?|bash|sh)\s+(\./)?pr/")  # le code de la PR ne tourne que dans la sandbox
@@ -767,7 +767,8 @@ class JobOutillagePr(unittest.TestCase):
         """bee/ci/ ou le workflow modifiés : les tests de la PR tournent dans la sandbox de la base, depuis la PR, après
         les préparatifs (sudo) ; leur échec rend le job rouge. Ni l'un ni l'autre modifié : rien ne tourne."""
         for chemins, code_tests, attendu in ((["bee/ci/vocabulaire.py"], 1, 1), (["bee/ci/nouveau.py"], 1, 1),
-                                             ([".github/workflows/bee-ci.yml"], 1, 1), (["bee/ci/vocabulaire.py"], 0, 0)):
+                                             ([".github/workflows/bee-ci.yml"], 1, 1), (["bee/sandbox/sans-docker.sh"], 1, 1),
+                                             (["bee/ci/vocabulaire.py"], 0, 0)):
             with self.subTest(chemins=chemins, code_tests=code_tests):
                 code, journal, pr = self.lancer_etape(chemins, code_tests)
                 self.assertEqual(code, attendu, journal)

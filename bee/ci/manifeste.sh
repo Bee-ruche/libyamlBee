@@ -8,7 +8,7 @@
 #    lignes modifiées (R1), chemins juges intacts pour une optimisation (commandement 3), aucun binaire.
 #
 # Usage : bee/ci/manifeste.sh <clone_pr> <clone_registre> [python]
-#   python : interpréteur qui a PyYAML et jsonschema (tools/requirements.txt du registre, ou outils/).
+#   python : interpréteur qui a PyYAML et jsonschema (outils/requirements.txt du registre).
 # Variables : BASE_SHA et TETE_SHA (obligatoires), AUTEUR (auteur de la PR, facultatif),
 #             GITHUB_OUTPUT (facultatif : les valeurs de la tâche y sont ajoutées),
 #             BEE_SORTIE_TACHE (copie de la tâche, défaut tache.yaml).

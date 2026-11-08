@@ -1,7 +1,7 @@
 # CI Bee du fork libyaml (https://github.com/Bee-ruche/libyamlBee). Fork indépendant, non affilié au projet libyaml.
 #
 # Étapes, dans l'ordre (la première en échec est rapportée, voir docs/evaluation.md du registre Bee) :
-#   1. manifeste et taille : bee verifier-fork (check-fork), registre (branche main) lu en français ou en anglais
+#   1. manifeste et taille : bee verifier-fork, avec l'outil du registre (branche main)
 #   2. compilation et tests d'origine de libyaml (cmake + ctest), x86-64 et ARM64
 #   3. déterminisme du flux d'événements (bee/tests, oracle + empreintes), x86-64 et ARM64
 #   4. fuzzing différentiel de l'analyseur (base contre PR), libFuzzer + ASan/UBSan, 10 minutes, x86-64

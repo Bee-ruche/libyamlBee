@@ -13,7 +13,7 @@ Sortie standard, une ligne par valeur, au format de $GITHUB_OUTPUT :
   metrique=debit_analyse
   sortie_compressee=identique
 Toutes les valeurs sont validées contre une liste fermée avant d'être écrites.
-Code de sortie : 0 si la tâche est trouvée et lisible, 1 sinon (message sur la sortie d'erreur) : jamais un défaut.
+Code de sortie : 0 si la tâche est trouvée, 1 sinon (message sur la sortie d'erreur).
 """
 
 import argparse
@@ -86,8 +86,8 @@ def main():
     except Illisible as e:
         echouer(f"tâche {tache} illisible : {e}")
     if valeurs["metrique"] is not None and valeurs["metrique"] not in METRIQUES:
-        echouer(f"la tâche {tache} vise la métrique « {valeurs['metrique']} », que le registre connaît mais que le banc de "
-                f"libyamlBee ne mesure pas (bee/bench/ab.py : {', '.join(METRIQUES)}) : verdict.py ne pourrait pas la juger")
+        echouer(f"métrique « {valeurs['metrique']} » connue du registre, mais que le banc de libyamlBee ne mesure pas "
+                f"(bee/bench/ab.py : {', '.join(METRIQUES)}) : verdict.py ne pourrait pas la juger")
     shutil.copyfile(chemin, args.sortie)
     print(f"tache={tache}")
     print(f"type={valeurs['type']}")

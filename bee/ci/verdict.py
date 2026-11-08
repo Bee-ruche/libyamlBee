@@ -7,8 +7,7 @@ Entrées :
   --artefacts   dossier où les artefacts « etat-* » ont été téléchargés : fichiers d'état <etape>.txt
                 (« succes » / « echec », écrits par bee/ci/etape.sh), rapport ab.json d'ab.py,
                 CONTRIBUTION.yaml de la PR et tache.yaml du registre. Ce sont des DONNÉES : lues, jamais exécutées.
-                Chaque fichier n'est lu qu'à la racine de l'artefact du job qui le produit : ab.json dans etat-banc,
-                CONTRIBUTION.yaml et tache.yaml dans etat-manifeste.
+                Chaque fichier n'est lu qu'à la racine de l'artefact de son job (etat-banc, etat-manifeste).
   --depot, --base, --tete   pour compter les lignes modifiées (git diff --numstat).
 
 Sortie (--sortie, défaut verdict.json), avec au minimum :

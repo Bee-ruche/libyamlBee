@@ -1,0 +1,52 @@
+tache: libyaml-0020
+utilisateur: bidji29
+agent:
+  modele: "Claude Opus 5.5 (claude-opus-5-5), constructeur lancé par l'architecte de La Ruche"
+  client: bee 0.1.0
+resume: "libyamlBee's CI reads the registry in both vocabularies (French, English) before the switch: tasks, project descriptor, manifests, tool, command, options; unreadable means red, never a default."
+changement: >
+  The « Manifeste et taille » job reads registry main, unpinned; it now reads both layouts of docs/english-names.md
+  (section 6) and maps everything to libyamlBee's internal French names, with the design of miniz-0049 (minizBee PR
+  24). bee/ci/vocabulaire.py (new): task keys and values (metric or metrique, compressed_output or sortie_compressee,
+  type optimization/review/measurement/test/split or their French values), project descriptor keys (metrics or
+  metriques, each metric's unit/direction or unite/sens) and manifest keys at all three levels (task/tache,
+  agent.model/modele, measurements.before/mesures.avant…), one vocabulary per document, a mixed document refused
+  (Illisible); a missing or unknown type or metric, an optimisation task without a metric, or a descriptor without a
+  readable, non-empty metric list is an error, never a default. bee/ci/tache.py: projects/ or projets/libyaml.yaml and
+  tasks/ or taches/libyaml/<task>.yaml, exactly one of each (found twice: refused); the task's metric must be one of
+  the registry descriptor's metrics, as before; the manifest in either vocabulary. bee/ci/verifier_fork.py (new,
+  identical to minizBee's): tools/bee.py or outils/bee.py (exactly one); the global option (--registry/--registre),
+  the command (check-fork/verifier-fork) and its options (--task/--tache, --head/--tete, --repo/--depot,
+  --author/--auteur) are read from the usage line of each --help, never guessed; a command is kept only if its usage
+  announces every option needed, and exactly one must be; BEE_REGISTRE and BEE_REGISTRY are removed, then the one of
+  the announced vocabulary names the registry. bee/ci/manifeste.sh: manifests/ or manifestes/ (diff filter and name
+  check). bee-ci.yml: whichever requirements file exists (exactly one), the manifest kept from either folder.
+  bee/ci/verdict.py: the main metric from the task copy in either vocabulary, read from the manifeste job's artifact
+  (etat-manifeste) only, as minizBee does; a copy absent in CI, unreadable, mixed, without a metric key or with an
+  unknown metric turns « Manifeste et taille » red, and the PR's manifest never chooses the metric (it is read only in
+  a local simulation without a task copy); manifests/** beside manifestes/** in the R1 exclusions. bee/ci/juges.sh:
+  one comment line. Size: 380 lines outside the tests (verifier_fork.py, 94, is minizBee's file unchanged), 19 of
+  them counted by R1 (bee-ci.yml; bee/** is excluded).
+teste:
+  - "In the sandbox (bee/sandbox/sans-docker.sh), on this head: bee/ci/test_verdict.py, new, 30 tests OK. Readers on both layouts end to end through manifeste.sh, on a small git repository and a fake registry in each layout (tasks/taches, projects/projets, tools/outils, manifests/manifestes), with an argparse fake tool in each vocabulary whose help text also names the other vocabulary's names; documents of each vocabulary in a registry of the other; a mixed task, descriptor or manifest refused."
+  - "Failing the job without calling the tool or writing the task copy: an unreadable task, type or metric, an optimisation without a metric, an unreadable, mixed, missing or duplicated descriptor, a task missing or found twice. The metric list taken from the registry's descriptor. The command and options asked from --help: a renamed-command stub without options set aside; two complete commands, an option under both names, a missing option or a failing help refused."
+  - "verdict.py: the metric from the task copy in both vocabularies, red when the copy is absent in CI or unreadable, never the manifest's metric, a task copy or manifest in another job's artifact ignored; the R1 count. bee-ci.yml: the requirements and manifest-keeping steps extracted and run."
+  - "Sixteen deliberate mutations (manifests/** counted in R1, the whole help scanned instead of the usage line, a missing task copy tolerated in CI, mixed documents accepted, a default type, an optimisation without a metric accepted, an empty default metric list, the task copy taken from any artifact, a task found twice accepted, manifests/ left out of the diff filter, two requirements files accepted, manifests/ not kept, the fork's metric list instead of the registry's, BEE_REGISTRE kept, a missing metric key read as null, an enumerated value of the other vocabulary accepted) each made the new tests fail."
+  - "Smoke run of bee/ci/manifeste.sh in the sandbox against a clone of the real registry main (French, 4d607c1): on master's merge of libyaml-0003 (1e90ffd..a5097dc) and on this branch (01cac4b..head, author bidji29), tache.py read the task and verifier_fork.py chose outils/bee.py --registre verifier-fork with --tache --base --tete --depot --auteur; the real verifier-fork passed both. Every task of taches/libyaml/ and every metric list of projets/ reads with the new readers (ruche.yaml, which has no metrics, is refused, as intended)."
+  - "bee/bench/test_ab.py and bee/tests/lancer.sh (determinism) pass in the sandbox on this head; neither is changed."
+non_teste:
+  - "No real English registry: the switch (ruche-0145) does not exist yet. The English side is tested with a fake tool built with argparse and hand-written English tasks, descriptors and manifests taken from docs/english-names.md, not with the translated bee.py."
+  - "The workflow itself on GitHub: only two of its steps' scripts are run, outside GitHub. libyamlBee's bee-ci.yml has no step that runs bee/ci/test_verdict.py (minizBee's has one); adding it is left to a later task."
+  - "ARM64: x86-64 only here (nothing in this change is architecture-dependent)."
+doutes: >
+  Before the switch, a contribution must keep its manifest in manifestes/ with French keys: today's French tool
+  (verifier-fork) reads only that folder and those keys, so a manifest in manifests/ or with English keys, accepted by
+  the fork, would still be refused by the registry until the switch. The help reading follows argparse's usage format:
+  if the registry ever keeps the old command as a full subcommand with all its options, both commands are retained and
+  the job turns red (fail closed), to be fixed then. Behaviour changes on libyamlBee: a task with metrique: null no
+  longer takes the manifest's metric; an unknown type or a metric outside the descriptor now fails instead of passing as
+  « inconnu » or « aucune » (relecture added to the closed list); a descriptor without a metric list fails instead of
+  yielding an empty list; a task or descriptor found twice is refused; an optimisation task without a metric is
+  refused. The fork's CI judges a PR with the base's bee/, so this PR's own run still uses the old scripts, and the new
+  ones apply from the next PR on. No libyamlBee PR is open, so none needs a rebase.
+taille_reelle: M

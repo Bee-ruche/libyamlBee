@@ -93,8 +93,17 @@ jobs:
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
-      - name: Dépendances de l'outil bee
-        run: pip install -r registre/outils/requirements.txt
+      - name: Dépendances de l'outil bee (tools/requirements.txt, ou outils/ avant la bascule du registre en anglais)
+        run: |
+          exigences=()
+          for f in registre/tools/requirements.txt registre/outils/requirements.txt; do
+            if [ -f "$f" ]; then exigences+=("$f"); fi
+          done
+          if [ "${#exigences[@]}" -ne 1 ]; then
+            echo "::error::Il faut exactement un fichier parmi tools/requirements.txt et outils/requirements.txt dans le registre (trouvés : ${exigences[*]:-aucun})." >&2
+            exit 1
+          fi
+          pip install -r "${exigences[0]}"
       - name: Manifeste, tâche, R1 et commandement 3
         id: manifeste
         env:
@@ -109,9 +118,11 @@ jobs:
           MANIFESTE: ${{ steps.manifeste.outputs.manifeste }}
         run: |
           mkdir -p donnees
-          # Nom validé par bee/ci/manifeste.sh (manifestes/libyaml-NNNN.yaml ou CONTRIBUTION.yaml).
+          # Nom validé par bee/ci/manifeste.sh (manifests/ ou manifestes/libyaml-NNNN.yaml, ou CONTRIBUTION.yaml) ;
+          # un manifeste est un fichier ordinaire : un lien symbolique n'est pas copié.
           case "$MANIFESTE" in
-            manifestes/libyaml-[0-9][0-9][0-9][0-9].yaml|CONTRIBUTION.yaml) cp "pr/$MANIFESTE" donnees/CONTRIBUTION.yaml 2>/dev/null || true ;;
+            manifests/libyaml-[0-9][0-9][0-9][0-9].yaml|manifestes/libyaml-[0-9][0-9][0-9][0-9].yaml|CONTRIBUTION.yaml)
+              if [ -f "pr/$MANIFESTE" ] && [ ! -L "pr/$MANIFESTE" ]; then cp "pr/$MANIFESTE" donnees/CONTRIBUTION.yaml 2>/dev/null || true; fi ;;
           esac
           cp -r "$ETATS" donnees/etats 2>/dev/null || true
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

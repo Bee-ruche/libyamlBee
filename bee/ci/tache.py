@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Trouve, dans le registre Bee, la tâche que désigne le manifeste d'une PR (manifestes/<tâche>.yaml).
+"""Trouve, dans le registre Bee, la tâche que désigne le manifeste d'une PR (manifests/<tâche>.yaml ou manifestes/).
 
 Le manifeste vient de la PR : c'est une donnée, lue avec yaml.safe_load et validée, jamais exécutée.
 La tâche et la liste des métriques viennent du registre (branche main, projets/libyaml.yaml) : c'est
-lui, et non la PR, qui fixe la métrique visée.
+lui, et non la PR, qui fixe la métrique visée. Les deux vocabulaires du registre sont lus (bee/ci/vocabulaire.py) :
+tasks/ ou taches/, projects/ ou projets/, clés et valeurs anglaises ou françaises ; un document qui les mêle est refusé.
 
 Usage : python3 bee/ci/tache.py --manifeste pr/manifestes/libyaml-0012.yaml --registre registre [--sortie tache.yaml]
 Sortie standard, une ligne par valeur, au format de $GITHUB_OUTPUT :
@@ -16,7 +17,6 @@ Code de sortie : 0 si la tâche est trouvée, 1 sinon (message sur la sortie d'e
 """
 
 import argparse
-import glob
 import os
 import re
 import shutil
@@ -24,16 +24,29 @@ import sys
 
 import yaml
 
+from vocabulaire import METRIQUES, Illisible, lire_manifeste, lire_tache, metriques_du_projet
+
 PROJET = "libyaml"
 MOTIF_TACHE = re.compile(r"^" + PROJET + r"-[0-9]{4}$")
-TYPES = {"optimisation", "mesure", "test", "decoupage"}
-SORTIES = {"identique", "peut_changer"}
 
 
 def echouer(message):
     print(f"tache.py : {message}", file=sys.stderr)
     print("sortie_compressee=identique")  # en cas de doute, le contrôle le plus strict s'applique
     sys.exit(1)
+
+
+def lire_unique(registre, dossiers, nom, quoi):
+    """(chemin, données) du seul fichier <dossier>/<nom> du registre parmi `dossiers` (anglais, puis français)."""
+    trouves = [os.path.join(d, nom) for d in dossiers if os.path.isfile(os.path.join(registre, d, nom))]
+    if len(trouves) != 1:
+        echouer(f"{quoi} {'introuvable' if not trouves else 'trouvé plusieurs fois'} dans le registre "
+                f"({' ou '.join(os.path.join(d, nom) for d in dossiers)} ; trouvés : {trouves or 'aucun'})")
+    try:
+        with open(os.path.join(registre, trouves[0]), encoding="utf-8") as f:
+            return os.path.join(registre, trouves[0]), yaml.safe_load(f)
+    except (OSError, ValueError, yaml.YAMLError) as e:
+        echouer(f"{quoi} {trouves[0]} illisible dans le registre : {e}")
 
 
 def main():
@@ -48,38 +61,38 @@ def main():
     try:
         with open(args.manifeste, encoding="utf-8") as f:
             manifeste = yaml.safe_load(f)
-    except yaml.YAMLError as e:
-        echouer(f"manifeste illisible : {e}")
-    if not isinstance(manifeste, dict):
-        echouer("le manifeste ne contient pas un objet YAML")
-    tache = manifeste.get("tache")
+    except (OSError, ValueError, yaml.YAMLError) as e:  # ValueError : un manifeste qui n'est pas de l'UTF-8
+        echouer(f"manifeste illisible (UTF-8 et YAML attendus) : {type(e).__name__} : {e}")
+    try:
+        tache = lire_manifeste(manifeste).get("tache")
+    except Illisible as e:
+        echouer(str(e))
     if not isinstance(tache, str) or not MOTIF_TACHE.match(tache):
-        echouer(f"la clé « tache » du manifeste doit être un identifiant {PROJET}-NNNN")
+        echouer(f"la clé « task » (ou « tache ») du manifeste doit être un identifiant {PROJET}-NNNN")
     nom = os.path.basename(args.manifeste)
     if nom != "CONTRIBUTION.yaml" and nom != tache + ".yaml":
-        echouer(f"le manifeste {nom} désigne la tâche {tache} : il doit s'appeler manifestes/{tache}.yaml")
+        echouer(f"le manifeste {nom} désigne la tâche {tache} : il doit s'appeler manifests/{tache}.yaml (ou manifestes/)")
 
     # Liste fermée des métriques : celle du descripteur de projet du registre (jamais celle de la PR).
+    _, projet = lire_unique(args.registre, ("projects", "projets"), PROJET + ".yaml", "descripteur de projet")
     try:
-        with open(os.path.join(args.registre, "projets", PROJET + ".yaml"), encoding="utf-8") as f:
-            projet = yaml.safe_load(f) or {}
-    except (OSError, yaml.YAMLError) as e:
-        echouer(f"descripteur projets/{PROJET}.yaml illisible dans le registre : {e}")
-    metriques = {m.get("id") for m in projet.get("metriques") or [] if isinstance(m, dict)}
-
-    candidats = sorted(glob.glob(os.path.join(args.registre, "taches", PROJET, tache + ".yaml")))
-    if not candidats:
-        echouer(f"tâche {tache} introuvable dans le registre")
-    with open(candidats[0], encoding="utf-8") as f:
-        donnees = yaml.safe_load(f) or {}
-    type_tache = donnees.get("type") if donnees.get("type") in TYPES else "inconnu"
-    metrique = donnees.get("metrique") if donnees.get("metrique") in metriques else "aucune"
-    sortie = donnees.get("sortie_compressee") if donnees.get("sortie_compressee") in SORTIES else "identique"
-    shutil.copyfile(candidats[0], args.sortie)
+        metriques = metriques_du_projet(projet)
+    except Illisible as e:
+        echouer(str(e))
+    chemin, donnees = lire_unique(args.registre, (os.path.join("tasks", PROJET), os.path.join("taches", PROJET)),
+                                  tache + ".yaml", f"tâche {tache}")
+    try:
+        valeurs = lire_tache(donnees, metriques)
+    except Illisible as e:
+        echouer(f"tâche {tache} illisible : {e}")
+    if valeurs["metrique"] is not None and valeurs["metrique"] not in METRIQUES:
+        echouer(f"métrique « {valeurs['metrique']} » connue du registre, mais que le banc de libyamlBee ne mesure pas "
+                f"(bee/bench/ab.py : {', '.join(METRIQUES)}) : verdict.py ne pourrait pas la juger")
+    shutil.copyfile(chemin, args.sortie)
     print(f"tache={tache}")
-    print(f"type={type_tache}")
-    print(f"metrique={metrique}")
-    print(f"sortie_compressee={sortie}")
+    print(f"type={valeurs['type']}")
+    print(f"metrique={valeurs['metrique'] or 'aucune'}")
+    print(f"sortie_compressee={valeurs['sortie_compressee']}")
     return 0
 
 

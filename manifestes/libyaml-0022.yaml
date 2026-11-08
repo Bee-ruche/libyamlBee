@@ -3,7 +3,7 @@ utilisateur: bidji29
 agent:
   modele: "Claude Opus 5.5 (claude-opus-5-5), constructeur lancé par l'architecte de La Ruche"
   client: bee 0.1.0
-resume: "libyamlBee's CI runs the tests of its own CI scripts (bee/ci/test_verdict.py) for a PR that changes bee/ci/, bee/sandbox/ or the workflow, in the base's sandbox, in a job whose result the verdict counts."
+resume: "libyamlBee's CI runs its CI scripts' tests (bee/ci/test_verdict.py) for a PR that changes bee/ci/, bee/sandbox/ or the workflow, in the base's sandbox, in a job whose result the verdict counts."
 changement: >
   bee-ci.yml gets a job « Tests de l'outillage de CI de la PR » (outillage-pr), on minizBee's model: when the PR
   changes bee/ci/, bee/sandbox/ or bee-ci.yml (git diff base...head), it runs the PR's bee/ci/test_verdict.py in the sandbox of the

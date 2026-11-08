@@ -3,8 +3,9 @@
 (français, anglais), avant la bascule du registre en anglais (libyaml-0020, docs/english-migration.md du registre).
 
 Couvre bee/ci/vocabulaire.py, bee/ci/tache.py et bee/ci/verifier_fork.py (de bout en bout par bee/ci/manifeste.sh, sur
-un petit dépôt git et un faux registre dans chaque disposition), la métrique principale de bee/ci/verdict.py et deux
-étapes du job « Manifeste et taille » de .github/workflows/bee-ci.yml. À lancer dans la sandbox du fork :
+un petit dépôt git et un faux registre dans chaque disposition), la métrique principale de bee/ci/verdict.py, deux
+étapes du job « Manifeste et taille » de .github/workflows/bee-ci.yml et le job qui lance ces tests pour une PR
+(« Tests de l'outillage de CI de la PR », compté par le verdict). À lancer dans la sandbox du fork :
 
   bee/sandbox/sans-docker.sh python3 bee/ci/test_verdict.py
 """
@@ -24,7 +25,7 @@ WORKFLOW = os.path.join(os.path.dirname(os.path.dirname(ICI)), ".github", "workf
 ETAPES = ["juges", "manifeste_et_taille", "compilation_x86_64", "compilation_arm64", "determinisme_x86_64",
           "determinisme_arm64", "fuzzing", "banc_ab"]
 JOBS_OK = {"manifeste": {"result": "success"}, "compilation-et-tests": {"result": "success"},
-           "fuzzing": {"result": "success"}, "banc-ab": {"result": "success"}}
+           "fuzzing": {"result": "success"}, "banc-ab": {"result": "success"}, "outillage-pr": {"result": "success"}}
 ENV_GIT = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
 
 # Données écrites à la main dans chaque vocabulaire (docs/english-names.md du registre), jamais dérivées des cartes de
@@ -659,6 +660,89 @@ class EtapesDuWorkflow(unittest.TestCase):
                 r = subprocess.run(["bash", "-e", "-c", script], cwd=d, capture_output=True, text=True, env=env)
                 self.assertEqual(r.returncode, 0, r.stderr)
                 self.assertEqual(os.path.exists(os.path.join(d, "donnees", "CONTRIBUTION.yaml")), garde)
+
+
+class JobOutillagePr(unittest.TestCase):
+    """Job « Tests de l'outillage de CI de la PR » de bee-ci.yml (libyaml-0022, sur le modèle de minizBee) : quand la PR
+    modifie bee/ci/ ou ce workflow, il lance son bee/ci/test_verdict.py dans la sandbox de la base ; code de la PR, donc
+    lecture seule, ni artefact ni sortie : seul son résultat compte, et le verdict le compte (needs)."""
+
+    executer = DeuxVocabulairesDansLeVerdict.executer
+
+    def workflow(self):
+        import yaml
+        with open(WORKFLOW, encoding="utf-8") as f:
+            return yaml.safe_load(f)
+
+    def test_job_isole_et_compte_par_le_verdict(self):
+        workflow = self.workflow()
+        job = workflow["jobs"]["outillage-pr"]
+        self.assertEqual((workflow["permissions"], job.get("permissions")), ({"contents": "read"}, {"contents": "read"}))
+        self.assertNotIn("outputs", job)
+        verdict = workflow["jobs"]["verdict"]
+        self.assertEqual((verdict["if"], set(verdict["needs"])), ("always()", set(workflow["jobs"]) - {"verdict"}))
+        self.assertEqual(set(JOBS_OK), set(verdict["needs"]))  # les résultats simulés ici sont ceux que le verdict reçoit
+        noms = [e.get("name", "") for e in job["steps"]]
+        i_juges = next(i for i, n in enumerate(noms) if n.startswith("Juges"))
+        for i, e in enumerate(job["steps"]):
+            texte = json.dumps(e)
+            for interdit in ("upload-artifact", "actions/cache", "secrets.", "GITHUB_OUTPUT", "GITHUB_ENV"):
+                self.assertNotIn(interdit, texte, noms[i])
+            if "actions/checkout" in e.get("uses", ""):
+                self.assertIs(e["with"]["persist-credentials"], False, noms[i])
+            if i < i_juges:
+                self.assertNotIn("base/bee", e.get("run", ""), noms[i])
+        etape = job["steps"][-1]["run"]
+        self.assertIn('git -C pr diff --quiet "$BASE_SHA...$TETE_SHA" -- bee/ci .github/workflows/bee-ci.yml', etape)
+        self.assertIn("cd pr && ../base/bee/sandbox/sans-docker.sh /usr/bin/python3 bee/ci/test_verdict.py", etape)
+        self.assertNotRegex(etape, r"(python3?|bash|sh)\s+(\./)?pr/")  # le code de la PR ne tourne que dans la sandbox
+
+    def lancer_etape(self, chemins, code_tests=0):
+        """L'étape telle quelle, sur un petit dépôt git : sudo et la sandbox de la base remplacés par des témoins."""
+        script = self.workflow()["jobs"]["outillage-pr"]["steps"][-1]["run"]
+        with tempfile.TemporaryDirectory() as d:
+            pr, journal = os.path.join(d, "pr"), os.path.join(d, "journal")
+            git = lambda *a: subprocess.run(["git", "-C", pr] + list(a), capture_output=True, text=True, check=True, env=ENV_GIT).stdout.strip()  # noqa: E731
+            os.makedirs(pr)
+            git("init", "-q", "-b", "master")
+            for chemin in ("src/parser.c", "bee/ci/vocabulaire.py", ".github/workflows/bee-ci.yml"):
+                ecrire(pr, chemin, "a\n")
+            git("add", "-A"), git("commit", "-q", "-m", "base")
+            base = git("rev-parse", "HEAD")
+            for chemin in chemins:
+                ecrire(pr, chemin, "b\n")
+            git("add", "-A"), git("commit", "-q", "-m", "tete")
+            ecrire(d, "bin/sudo", f'#!/bin/sh\necho "sudo $*" >> "{journal}"\n')
+            ecrire(d, "base/bee/sandbox/sans-docker.sh", f'#!/bin/sh\necho "sandbox $(pwd) $*" >> "{journal}"\nexit {code_tests}\n')
+            for temoin in ("bin/sudo", "base/bee/sandbox/sans-docker.sh"):
+                os.chmod(os.path.join(d, temoin), 0o755)
+            env = dict(os.environ, PATH=os.path.join(d, "bin") + os.pathsep + os.environ["PATH"], BASE_SHA=base,
+                       TETE_SHA=git("rev-parse", "HEAD"))
+            r = subprocess.run(["bash", "-e", "-o", "pipefail", "-c", script], cwd=d, capture_output=True, text=True, env=env)
+            return r.returncode, (lire(journal) or "").splitlines(), pr
+
+    def test_etape_lance_les_tests_de_la_pr_dans_la_sandbox(self):
+        """bee/ci/ ou le workflow modifiés : les tests de la PR tournent dans la sandbox de la base, depuis la PR, après
+        les préparatifs (sudo) ; leur échec rend le job rouge. Ni l'un ni l'autre modifié : rien ne tourne."""
+        for chemins, code_tests, attendu in ((["bee/ci/vocabulaire.py"], 1, 1), (["bee/ci/nouveau.py"], 1, 1),
+                                             ([".github/workflows/bee-ci.yml"], 1, 1), (["bee/ci/vocabulaire.py"], 0, 0)):
+            with self.subTest(chemins=chemins, code_tests=code_tests):
+                code, journal, pr = self.lancer_etape(chemins, code_tests)
+                self.assertEqual(code, attendu, journal)
+                self.assertEqual(journal[-1], f"sandbox {pr} /usr/bin/python3 bee/ci/test_verdict.py")
+                self.assertTrue(journal[:-1] and all(l.startswith("sudo ") for l in journal[:-1]), journal)
+        code, journal, _ = self.lancer_etape(["src/parser.c"], 1)
+        self.assertEqual((code, journal), (0, []))
+
+    def test_le_verdict_compte_son_resultat(self):
+        """Rouge si le job n'a pas réussi (échec, annulé, sauté), même si un fichier d'état dit « succes »."""
+        ailleurs = [("etat-banc/etats/outillage_pr.txt", "succes\n")]
+        for resultat in ("failure", "cancelled", "skipped"):
+            with self.subTest(resultat=resultat):
+                v = self.executer(jobs=dict(JOBS_OK, **{"outillage-pr": {"result": resultat}}), tache=TACHE_FR, ailleurs=ailleurs)
+                self.assertEqual((v["ci"], v["etape_en_echec"]), ("rouge", "job outillage-pr"))
+        v = self.executer(jobs=JOBS_OK, tache=TACHE_FR)
+        self.assertEqual((v["ci"], v["details"]["jobs"]["outillage-pr"]), ("verte", "success"))
 
 
 if __name__ == "__main__":

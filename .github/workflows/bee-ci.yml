@@ -6,7 +6,8 @@
 #   3. déterminisme du flux d'événements (bee/tests, oracle + empreintes), x86-64 et ARM64
 #   4. fuzzing différentiel de l'analyseur (base contre PR), libFuzzer + ASan/UBSan, 10 minutes, x86-64
 #   5. banc A/B entrelacé : point de départ de la PR contre tête de la PR, 10 répétitions, Cachegrind
-#   6. verdict.json, publié en artefact « verdict » (lu par le workflow verdicts.yml du registre)
+#   6. tests de l'outillage de CI de la PR (bee/ci/test_verdict.py), si elle modifie bee/ci/ ou ce workflow, en sandbox
+#   7. verdict.json, publié en artefact « verdict » (lu par le workflow verdicts.yml du registre)
 #
 # Sécurité : identique à la CI de miniz. permissions contents: read, aucun secret, persist-credentials
 # false, déclencheur pull_request. Les juges (bee/) viennent de la BASE de la PR ; seules les sources
@@ -275,9 +276,48 @@ jobs:
           path: conserver/
           if-no-files-found: warn
 
+  # Tests de l'outillage de CI de la PR quand elle modifie bee/ci/ ou ce workflow, sur le modèle de minizBee : code de
+  # la PR, donc job à part, lancé dans la sandbox de la base (sans réseau ni variables d'environnement), en lecture
+  # seule, sans secret ni identifiant conservé, sans artefact ni sortie ; seul son résultat compte (needs du verdict).
+  outillage-pr:
+    name: Tests de l'outillage de CI de la PR
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Base de la PR (sandbox)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ env.BASE_SHA }}
+          path: base
+          persist-credentials: false
+      - name: Tête de la PR (historique complet, pour le diff)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ env.TETE_SHA }}
+          path: pr
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Juges (bee/ de la base, ou de la PR en amorçage)
+        run: |
+          export base=base pr=pr base_sha="${BASE_SHA:?}" etats="${ETATS:?}"
+          eval "$BEE_JUGES"
+      - name: Tests de l'outillage de CI de la PR, dans la sandbox de la base (seulement si la PR modifie bee/ci/ ou ce workflow)
+        run: |
+          if git -C pr diff --quiet "$BASE_SHA...$TETE_SHA" -- bee/ci .github/workflows/bee-ci.yml; then
+            echo "bee/ci/ et bee-ci.yml inchangés par la PR : pas de tests de l'outillage de la PR."
+            exit 0
+          fi
+          # Avant tout code de la PR : PyYAML pour /usr/bin/python3, que la sandbox lance (env -i, PATH du système), et
+          # espaces de noms utilisateur permis (bee/sandbox/sans-docker.sh les exige).
+          sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends python3-yaml
+          if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then sudo sysctl -q -w kernel.apparmor_restrict_unprivileged_userns=0; fi
+          cd pr && ../base/bee/sandbox/sans-docker.sh /usr/bin/python3 bee/ci/test_verdict.py
+
   verdict:
     name: Verdict
-    needs: [manifeste, compilation-et-tests, fuzzing, banc-ab]
+    needs: [manifeste, compilation-et-tests, fuzzing, banc-ab, outillage-pr]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 10

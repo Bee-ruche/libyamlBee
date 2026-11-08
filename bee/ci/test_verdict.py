@@ -26,6 +26,11 @@ ETAPES = ["juges", "manifeste_et_taille", "compilation_x86_64", "compilation_arm
           "determinisme_arm64", "fuzzing", "banc_ab"]
 JOBS_OK = {"manifeste": {"result": "success"}, "compilation-et-tests": {"result": "success"},
            "fuzzing": {"result": "success"}, "banc-ab": {"result": "success"}, "outillage-pr": {"result": "success"}}
+# Dossier où chaque job dépose ses fichiers d'état dans son artefact (bee-ci.yml), écrit à la main : les tests vérifient
+# verdict.py, ils ne le recopient pas. « juges » va dans --etats, le dossier du job verdict.
+DOSSIER_ETAT = {"manifeste_et_taille": "etat-manifeste/etats", "compilation_x86_64": "etat-tests-x86_64",
+                "determinisme_x86_64": "etat-tests-x86_64", "compilation_arm64": "etat-tests-arm64",
+                "determinisme_arm64": "etat-tests-arm64", "fuzzing": "etat-fuzzing", "banc_ab": "etat-banc/etats"}
 ENV_GIT = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
 
 # Données écrites à la main dans chaque vocabulaire (docs/english-names.md du registre), jamais dérivées des cartes de
@@ -503,11 +508,19 @@ class DeuxVocabulairesDansLeVerdict(unittest.TestCase):
     """verdict.py : la métrique de la copie de la tâche (artefact etat-manifeste), en anglais ou en français ;
     illisible, absente en CI ou venue d'un autre artefact : jamais un défaut, jamais la métrique de la PR."""
 
-    def executer(self, jobs=JOBS_OK, tache=None, manifeste=None, ailleurs=(), ab=True):
+    def executer(self, jobs=JOBS_OK, tache=None, manifeste=None, ailleurs=(), ab=True, etats=None, liens=()):
+        """Verdict sur des artefacts : chaque état (tous « succes » par défaut) là où son job le dépose, la copie de la
+        tâche, le manifeste et ab.json à leur place, des fichiers `ailleurs`, et des liens symboliques `liens` (chemin,
+        contenu) vers un fichier hors des artefacts."""
         with tempfile.TemporaryDirectory() as d:
             artefacts = os.path.join(d, "artefacts")
-            for etape in ETAPES:
-                ecrire(artefacts, f"x/etats/{etape}.txt", "succes\n")
+            for etape, valeur in ({e: "succes" for e in ETAPES} if etats is None else etats).items():
+                ecrire(os.path.join(artefacts, DOSSIER_ETAT[etape]) if etape in DOSSIER_ETAT else os.path.join(d, "etats"),
+                       f"{etape}.txt", valeur + "\n")
+            for i, (chemin, contenu) in enumerate(liens):
+                ecrire(d, f"cible-{i}", contenu)
+                os.makedirs(os.path.dirname(os.path.join(artefacts, chemin)), exist_ok=True)
+                os.symlink(os.path.join(d, f"cible-{i}"), os.path.join(artefacts, chemin))
             if ab:
                 ecrire(artefacts, "etat-banc/ab.json", json.dumps(rapport_ab()))
             for nom, contenu in (("tache.yaml", tache), ("CONTRIBUTION.yaml", manifeste)):
@@ -515,7 +528,9 @@ class DeuxVocabulairesDansLeVerdict(unittest.TestCase):
                     ecrire(artefacts, f"etat-manifeste/{nom}", contenu)
             for chemin, contenu in ailleurs:
                 ecrire(artefacts, chemin, contenu)
-            commande = [sys.executable, VERDICT, "--artefacts", artefacts, "--sortie", os.path.join(d, "verdict.json")]
+            os.makedirs(os.path.join(d, "etats"), exist_ok=True)
+            commande = [sys.executable, VERDICT, "--artefacts", artefacts, "--etats", os.path.join(d, "etats"),
+                        "--sortie", os.path.join(d, "verdict.json")]
             if jobs is not None:
                 ecrire(d, "jobs.json", json.dumps(jobs))
                 commande += ["--jobs", os.path.join(d, "jobs.json")]
@@ -568,6 +583,32 @@ class DeuxVocabulairesDansLeVerdict(unittest.TestCase):
                 v = self.executer(jobs=jobs, tache=TACHE_FR, ailleurs=ailleurs, ab=False)
                 self.assertEqual((v["metrique"], v["gain"], v["au_dela_du_bruit"], v["mesures"]["B"]["debit_emission"]),
                                  ("debit_emission", None, False, None))
+
+    def test_etat_lu_seulement_dans_le_dossier_de_son_job(self):
+        """Chaque <etape>.txt n'est lu que dans le dossier d'état du job qui l'écrit : un « succes » déposé dans un autre
+        artefact, dans le dossier d'un autre job, à la racine ou dans un sous-dossier du bon artefact ne remplace pas un
+        état manquant (rouge, sans résultat) ; un état qui est un lien symbolique non plus."""
+        self.assertEqual(self.executer(tache=TACHE_FR)["ci"], "verte")  # le parcours honnête
+        for manquante, proprietaire in DOSSIER_ETAT.items():
+            autre = "etat-manifeste/etats" if proprietaire != "etat-manifeste/etats" else "etat-fuzzing"
+            dossiers = ["juge", "etat-evil", "etat-evil/etats", "x/etats", autre, proprietaire + "/sous"]
+            dossiers += [proprietaire.split("/")[0]] if "/" in proprietaire else []
+            etats = {e: "succes" for e in ETAPES if e != manquante}
+            with self.subTest(manquante=manquante):
+                v = self.executer(tache=TACHE_FR, etats=etats, ailleurs=[(f"{d}/{manquante}.txt", "succes\n") for d in dossiers])
+                self.assertEqual((v["ci"], v["etapes"][manquante]), ("rouge", "absent"))
+                v = self.executer(tache=TACHE_FR, etats=etats, liens=[(f"{proprietaire}/{manquante}.txt", "succes\n")])
+                self.assertEqual((v["ci"], v["etapes"][manquante]), ("rouge", "absent"))
+        v = self.executer(tache=TACHE_FR, ailleurs=[("etat-evil/amorcage.txt", "oui\n"), ("x/etats/amorcage.txt", "oui\n")])
+        self.assertFalse(v["amorcage"])
+        self.assertTrue(self.executer(tache=TACHE_FR, ailleurs=[("etat-fuzzing/amorcage.txt", "oui\n")])["amorcage"])
+
+    def test_lien_symbolique_jamais_lu(self):
+        """La copie de la tâche et ab.json ne sont jamais lus à travers un lien symbolique, même à leur place."""
+        v = self.executer(tache=None, liens=[("etat-manifeste/tache.yaml", TACHE_FR)])
+        self.assertEqual((v["ci"], v["etape_en_echec"], v["metrique"]), ("rouge", "Manifeste et taille", None))
+        v = self.executer(tache=TACHE_FR, ab=False, liens=[("etat-banc/ab.json", json.dumps(rapport_ab()))])
+        self.assertEqual((v["metrique"], v["gain"]), ("debit_emission", None))
 
     def test_metrique_null_jamais_celle_du_manifeste(self):
         tache = TACHE_EN.replace("metric: debit_emission", "metric: null").replace("optimization", "test")
@@ -695,6 +736,7 @@ class JobOutillagePr(unittest.TestCase):
         etape = job["steps"][-1]["run"]
         self.assertIn('git -C pr diff --quiet "$BASE_SHA...$TETE_SHA" -- bee/ci .github/workflows/bee-ci.yml', etape)
         self.assertIn("cd pr && ../base/bee/sandbox/sans-docker.sh /usr/bin/python3 bee/ci/test_verdict.py", etape)
+        self.assertLess(etape.index("sudo systemctl stop docker.socket docker\n"), etape.index("../base/bee/sandbox/sans-docker.sh"))
         self.assertNotRegex(etape, r"(python3?|bash|sh)\s+(\./)?pr/")  # le code de la PR ne tourne que dans la sandbox
 
     def lancer_etape(self, chemins, code_tests=0):
@@ -731,8 +773,31 @@ class JobOutillagePr(unittest.TestCase):
                 self.assertEqual(code, attendu, journal)
                 self.assertEqual(journal[-1], f"sandbox {pr} /usr/bin/python3 bee/ci/test_verdict.py")
                 self.assertTrue(journal[:-1] and all(l.startswith("sudo ") for l in journal[:-1]), journal)
+                self.assertIn("sudo systemctl stop docker.socket docker", journal[:-1])  # Docker arrêté avant la PR
         code, journal, _ = self.lancer_etape(["src/parser.c"], 1)
         self.assertEqual((code, journal), (0, []))
+
+    def test_sandbox_isole_processus_tmp_reseau_et_environnement(self):
+        """bee/sandbox/sans-docker.sh, où tournent les tests de la PR : PID 1 dans son espace de noms, dont le /proc ne
+        montre aucun processus de l'appelant ; un /tmp vide, à elle ; pas de réseau ; aucune variable de l'appelant ; le
+        dépôt à sa racine."""
+        sandbox = os.path.join(os.path.dirname(ICI), "sandbox", "sans-docker.sh")
+        script = ('echo "pid=$$"; for f in /proc/[0-9]*/cmdline; do tr "\\0" " " < "$f"; echo; done | grep -c "^sleep 61" || true; '
+                  'ls -A /tmp | wc -l; test -e "$1/temoin" && echo tmp-appelant || echo tmp-prive; echo "var=${BEE_TEMOIN:-absente}"; '
+                  '/usr/bin/python3 -c "import socket; socket.create_connection((\'192.0.2.1\', 9), 1)" 2>/dev/null && echo reseau || echo sans-reseau; '
+                  'cat temoin')
+        with tempfile.TemporaryDirectory() as d:
+            subprocess.run(["git", "init", "-q", d], check=True)
+            ecrire(d, "temoin", "depot\n")
+            temoin = subprocess.Popen(["sleep", "61"])
+            try:
+                r = subprocess.run(["bash", sandbox, "bash", "-c", script, "-", d], cwd=d, capture_output=True, text=True,
+                                   env=dict(os.environ, BEE_TEMOIN="fuite"), timeout=60)
+            finally:
+                temoin.kill()
+                temoin.wait()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout.split(), ["pid=1", "0", "0", "tmp-prive", "var=absente", "sans-reseau", "depot"], r.stderr)
 
     def test_le_verdict_compte_son_resultat(self):
         """Rouge si le job n'a pas réussi (échec, annulé, sauté), même si un fichier d'état dit « succes »."""

@@ -277,7 +277,7 @@ jobs:
           if-no-files-found: warn
 
   # Tests de l'outillage de CI de la PR quand elle modifie bee/ci/ ou ce workflow, sur le modèle de minizBee : code de
-  # la PR, donc job à part, lancé dans la sandbox de la base (sans réseau ni variables d'environnement), en lecture
+  # la PR, donc job à part, lancé dans la sandbox de la base (sans réseau, processus ni variables d'environnement), en lecture
   # seule, sans secret ni identifiant conservé, sans artefact ni sortie ; seul son résultat compte (needs du verdict).
   outillage-pr:
     name: Tests de l'outillage de CI de la PR
@@ -309,8 +309,9 @@ jobs:
             echo "bee/ci/ et bee-ci.yml inchangés par la PR : pas de tests de l'outillage de la PR."
             exit 0
           fi
-          # Avant tout code de la PR : PyYAML pour /usr/bin/python3, que la sandbox lance (env -i, PATH du système), et
-          # espaces de noms utilisateur permis (bee/sandbox/sans-docker.sh les exige).
+          # Avant tout code de la PR : Docker arrêté (aucun démon joignable depuis la sandbox), PyYAML pour /usr/bin/python3,
+          # que la sandbox lance (env -i, PATH du système), et espaces de noms utilisateur permis (sans-docker.sh les exige).
+          sudo systemctl stop docker.socket docker
           sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends python3-yaml
           if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then sudo sysctl -q -w kernel.apparmor_restrict_unprivileged_userns=0; fi
           cd pr && ../base/bee/sandbox/sans-docker.sh /usr/bin/python3 bee/ci/test_verdict.py

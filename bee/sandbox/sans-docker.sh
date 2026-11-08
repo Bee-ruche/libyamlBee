@@ -12,7 +12,8 @@
 #   ex. bee/sandbox/sans-docker.sh make -C bee differentiel
 #       bee/sandbox/sans-docker.sh bash          (session interactive)
 #
-# Exige les espaces de noms utilisateur et PID (unshare -r --pid). C'est une isolation plus légère qu'une VM ou un
+# Exige les espaces de noms utilisateur et PID (unshare -r --pid). Ses montages ne touchent pas la table des montages de
+# l'espace utilisateur (mount -n) : elle marche aussi lancée dans une autre sandbox. C'est une isolation plus légère qu'une VM ou un
 # conteneur, suffisante pour compiler et mesurer le code des projets Bee. Si elle échoue, utilisez
 # Docker (bee/README.md).
 set -euo pipefail
@@ -27,12 +28,12 @@ exec unshare -rmn --pid --fork --mount-proc --kill-child --propagation private -
   set -e
   depot="$1"; shift
   attente="$(mktemp -d -t bee-sandbox.XXXXXX)"
-  mount --bind "$depot" "$attente"
-  mount -t tmpfs tmpfs "$HOME"
+  mount -n --bind "$depot" "$attente"
+  mount -n -t tmpfs tmpfs "$HOME"
   vue="$(mktemp -d -p "$HOME" bee-sandbox.XXXXXX)"
-  mount --move "$attente" "$vue"
+  mount -n --move "$attente" "$vue"
   rmdir "$attente"
-  mount -t tmpfs tmpfs /tmp
+  mount -n -t tmpfs tmpfs /tmp
   cd "$vue"
   exec env -i PATH=/usr/local/bin:/usr/bin:/bin HOME="$HOME" LANG=C.UTF-8 TERM="${TERM:-dumb}" "$@"
 ' bee-sandbox "$depot" "$@"

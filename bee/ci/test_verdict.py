@@ -781,8 +781,19 @@ class JobOutillagePr(unittest.TestCase):
     def test_sandbox_isole_processus_tmp_reseau_et_environnement(self):
         """bee/sandbox/sans-docker.sh, où tournent les tests de la PR : PID 1 dans son espace de noms, dont le /proc ne
         montre aucun processus de l'appelant ; un /tmp vide, à elle ; pas de réseau ; aucune variable de l'appelant ; le
-        dépôt à sa racine."""
+        dépôt à sa racine. Aussi lancée dans une autre sandbox dont la table des montages de l'espace utilisateur
+        (/run/mount/utab) est en lecture seule, comme sur un runner de GitHub : ses montages ne l'écrivent pas."""
         sandbox = os.path.join(os.path.dirname(ICI), "sandbox", "sans-docker.sh")
+        # Espace de noms jetable où /run/mount/utab existe mais ne s'écrit pas (ses propres montages ne l'écrivent pas).
+        utab_ro = ["unshare", "-rm", "--propagation", "private", "bash", "-c",
+                   'set -e; mount -n -t tmpfs tmpfs /run; mkdir /run/mount; touch /run/mount/utab; '
+                   'mount -n --bind /run/mount /run/mount; mount -n -o remount,ro,bind /run/mount; '
+                   '! touch /run/mount/utab 2>/dev/null; exec "$@"', "-"]
+        for enveloppe in ([], utab_ro):
+            with self.subTest(utab_en_lecture_seule=bool(enveloppe)):
+                self.verifier_sandbox(sandbox, enveloppe)
+
+    def verifier_sandbox(self, sandbox, enveloppe):
         script = ('echo "pid=$$"; for f in /proc/[0-9]*/cmdline; do tr "\\0" " " < "$f"; echo; done | grep -c "^sleep 61" || true; '
                   'ls -A /tmp | wc -l; test -e "$1/temoin" && echo tmp-appelant || echo tmp-prive; echo "var=${BEE_TEMOIN:-absente}"; '
                   '/usr/bin/python3 -c "import socket; socket.create_connection((\'192.0.2.1\', 9), 1)" 2>/dev/null && echo reseau || echo sans-reseau; '
@@ -792,7 +803,7 @@ class JobOutillagePr(unittest.TestCase):
             ecrire(d, "temoin", "depot\n")
             temoin = subprocess.Popen(["sleep", "61"])
             try:
-                r = subprocess.run(["bash", sandbox, "bash", "-c", script, "-", d], cwd=d, capture_output=True, text=True,
+                r = subprocess.run(enveloppe + ["bash", sandbox, "bash", "-c", script, "-", d], cwd=d, capture_output=True, text=True,
                                    env=dict(os.environ, BEE_TEMOIN="fuite"), timeout=60)
             finally:
                 temoin.kill()

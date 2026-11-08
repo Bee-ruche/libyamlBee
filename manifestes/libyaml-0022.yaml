@@ -1,0 +1,36 @@
+tache: libyaml-0022
+utilisateur: bidji29
+agent:
+  modele: "Claude Opus 5.5 (claude-opus-5-5), constructeur lancé par l'architecte de La Ruche"
+  client: bee 0.1.0
+resume: "libyamlBee's CI runs the tests of its own CI scripts (bee/ci/test_verdict.py) for a PR that changes bee/ci/ or the workflow, in the base's sandbox, in a job whose result the verdict counts."
+changement: >
+  bee-ci.yml gets a job « Tests de l'outillage de CI de la PR » (outillage-pr), on minizBee's model: when the PR
+  changes bee/ci/ or bee-ci.yml (git diff base...head), it runs the PR's bee/ci/test_verdict.py in the sandbox of the
+  base (base/bee/sandbox/sans-docker.sh: no network, no environment variables, an empty home), with the system's
+  /usr/bin/python3; before any code of the PR runs, the step installs python3-yaml and allows user namespaces, which
+  the sandbox requires (sysctl kernel.apparmor_restrict_unprivileged_userns=0, when the key exists). Since the PR's
+  code runs in it, the job produces only a result: contents read only, checkouts without kept credentials, no
+  artifact, no output, no secret; the Juges step comes first, as in every job that uses the base's bee/. The verdict
+  counts it: outillage-pr is in the verdict job's needs, and bee/ci/verdict.py (unchanged) turns « ci » red for any
+  job that did not succeed (failure, cancelled or skipped), named « job outillage-pr ». The header comment lists the
+  new step. Tests, in bee/ci/test_verdict.py (outside the task's files, which list only bee-ci.yml; bee/** is excluded
+  from R1): the job's structure, the step extracted from the workflow and run with witnesses for sudo and the sandbox,
+  and the verdict counting its result; JOBS_OK now mirrors the verdict's needs. Size: 44 lines counted by R1
+  (bee-ci.yml, +42 -2); bee/ci/test_verdict.py +87 -3.
+teste:
+  - "In the sandbox (bee/sandbox/sans-docker.sh), on this head: bee/ci/test_verdict.py 36 tests OK (33 before, 3 new); bee/bench/test_ab.py 10 OK; python3 bee/corpus/generer.py conforming (40 files); bee/tests/lancer.sh OK (determinism: 40 event streams identical; round trip: 62 emitter outputs identical)."
+  - "A PR that breaks a reader of bee/ci/ turns the verdict red, on a local test branch: essai/lecteur-casse, from this head, changes one line of bee/ci/vocabulaire.py (the English task map reads « metrics » instead of « metric »). The step, extracted from this branch's bee-ci.yml, run with BASE_SHA = master 69f8054 and the real base sandbox and /usr/bin/python3 (sudo replaced by a no-op witness; the whole step inside an outer sandbox): exit 1, the PR's suite ran 36 tests, 8 failures and 3 errors. The same step on this head: exit 0, 36 tests OK. Then master's bee/ci/verdict.py, given needs where outillage-pr is « failure » and every other job and step succeeded: ci rouge, etape_en_echec « job outillage-pr »; with « success »: ci verte."
+  - "New tests: the job reads only (contents: read), keeps no credentials, has no output, uploads no artifact, uses no secret, writes neither GITHUB_OUTPUT nor GITHUB_ENV, runs the PR's code only through the base's sandbox, and is in the verdict's needs (which list every other job); the step run on small git repositories: bee/ci/ changed, a new file in bee/ci/, or the workflow changed, the tests run in the sandbox from pr/ after the sudo preparations and their failure fails the step; only src/ changed, nothing runs; the verdict red for failure, cancelled or skipped even with a planted « succes » state file, green for success."
+  - "Mutations: with master's workflow the 3 new tests fail; with outillage-pr removed from the verdict's needs, the structure test fails; with the PR's tests run outside the sandbox and their failure swallowed, the step and structure tests fail."
+non_teste:
+  - "GitHub Actions itself: no workflow can run here. Only the CI of this PR (it changes bee-ci.yml, so the new job runs on it) will show that ubuntu-24.04 runners allow unshare -rmn once the sysctl is applied, that apt installs python3-yaml for /usr/bin/python3 (3.12 there, 3.13 here), and the job's duration. If the sandbox were refused there, the job would fail and the verdict would be red, never green."
+  - "The test branch was run locally, not on GitHub: the builder opens no PR."
+  - "The independent adversarial review by an agent of another model (second criterion): not part of the builder's work."
+doutes: >
+  The job runs only when the PR changes bee/ci/ or bee-ci.yml, like minizBee's; unlike minizBee, libyamlBee's
+  manifest job does not also run the base's tests on every PR (the tests only read bee/ci/ and the workflow, so the
+  condition covers what they test). The verdict names a failure « job outillage-pr » rather than a step label: adding
+  a step to verdict.py would leave the task's files. Such PRs take about half a minute more (apt-get update and
+  python3-yaml).
+taille_reelle: S

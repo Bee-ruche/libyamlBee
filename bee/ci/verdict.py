@@ -1,37 +1,42 @@
 #!/usr/bin/env python3
-"""Assemble verdict.json pour la CI Bee du fork libyaml (job « verdict » de .github/workflows/bee-ci.yml).
+"""Assembles verdict.json for the Bee CI of the libyaml fork (job « verdict » of .github/workflows/bee-ci.yml).
 
-Entrées :
-  --jobs        résultats des jobs GitHub (toJSON(needs) : {"manifeste": {"result": "success", "outputs": {...}}, ...}).
-                C'est la source de vérité de « ci » : le code de la PR ne peut pas les réécrire.
-  --artefacts   dossier où les artefacts « etat-* » ont été téléchargés : fichiers d'état <etape>.txt
-                (« succes » / « echec », écrits par bee/ci/etape.sh), rapport ab.json d'ab.py,
-                CONTRIBUTION.yaml de la PR et tache.yaml du registre. Ce sont des DONNÉES : lues, jamais exécutées.
-                Chaque fichier n'est lu qu'à la racine de l'artefact de son job (etat-banc, etat-manifeste), chaque
-                fichier d'état que dans le dossier d'état de son job (DOSSIERS_ETATS) ; jamais un lien symbolique.
-  --depot, --base, --tete   pour compter les lignes modifiées (git diff --numstat).
+Inputs:
+  --jobs        the GitHub jobs' results (toJSON(needs): {"manifeste": {"result": "success", "outputs": {...}}, ...}).
+                They are the source of truth for « ci »: the PR's code cannot rewrite them.
+  --artefacts   folder where the « etat-* » artifacts were downloaded: state files <etape>.txt (« succes » / « echec »,
+                written by bee/ci/etape.sh), ab.py's report ab.json, the PR's CONTRIBUTION.yaml and the registry's
+                tache.yaml. They are DATA: read, never executed. Each file is read only at the root of its job's artifact
+                (etat-banc, etat-manifeste), each state file only in its job's state folder (DOSSIERS_ETATS); never a
+                symbolic link.
+  --depot, --base, --tete   to count the changed lines (git diff --numstat).
 
-Sortie (--sortie, défaut verdict.json), avec au minimum :
-  ci                « verte » si tous les jobs ont réussi, sinon « rouge »
-  etape_en_echec    première étape en échec dans l'ordre de la CI (si rouge)
-  gain              gain relatif sur la métrique principale de la tâche (positif = mieux), ou null
-  metrique          la métrique principale retenue, ou null
-  au_dela_du_bruit  test du signe d'ab.py sur la métrique principale (false si aucune métrique)
-  mesures           {"A": {6 métriques}, "B": {6 métriques}} : médianes d'ab.py
-  instructions      décompte Cachegrind par scénario sur un sous-corpus : {"instructions_n6": {"A", "B", "gain"}, ...}
-  degradations      métriques dégradées au-delà du bruit (test du signe ; instructions au-delà du seuil), avec leur gain
-  lignes_modifiees  lignes modifiées hors bee/**, tests/**, manifests/**, manifestes/** et CONTRIBUTION.yaml (pour bee enregistrer-verdict)
-  amorcage          true si les juges venaient de la PR elle-même (base = commit d'amorçage, voir bee/ci/juges.sh)
-  etapes, details   pour les relecteurs
+Output (--sortie, default verdict.json), in English (the registry's tools/migration/names.yaml, family fork_verdict),
+with at least:
+  ci                « green » if every job passed, otherwise « red »
+  failed_step       the first failed step in the CI's order (if red)
+  gain              relative gain on the task's main metric (positive = better), or null
+  metric            the main metric kept, or null
+  beyond_noise      ab.py's sign test on the main metric (false without a metric)
+  measurements      {"A": {4 metrics}, "B": {4 metrics}}: ab.py's medians
+  instructions      Cachegrind count per scenario on a sub-corpus: {"instructions_parse": {"A", "B", "gain"}, ...}
+  degradations      metrics degraded beyond noise (sign test; instructions beyond the threshold), with their gain
+  changed_lines     lines changed outside bee/**, tests/**, manifests/**, manifestes/** and CONTRIBUTION.yaml (for
+                    bee record-verdict)
+  bootstrap         true if the judges came from the PR itself (base = bootstrap commit, see bee/ci/juges.sh)
+  steps, details    for the reviewers
+Metric ids are written in English (parse_throughput, load_throughput, emit_throughput, max_memory_kb,
+instructions_parse/_load/_emit); bee reads them in either vocabulary until its DATE_D.
 
-Métrique principale : « metric » ou « metrique » de la copie de la tâche (tache.yaml d'etat-manifeste, bee/ci/vocabulaire.py),
-null si elle dit null ; absente en CI ou illisible : « Manifeste et taille » en échec, jamais la métrique de la PR. Hors
-CI et sans copie seulement : celle du manifeste (metric, sinon seule métrique de measurements.before ; ou en français).
+Main metric: « metric » of the task's copy (tache.yaml of etat-manifeste, bee/ci/vocabulaire.py; a French metric id is
+read in English), null if it says null; missing in CI or unreadable: « Manifest and size » failed, never the PR's
+metric. Outside CI and without a copy only: the manifest's (metric, otherwise the only metric of measurements.before;
+or in French).
 
-La CI ne tranche pas R4 et R5 (seuils de gain et d'effets de bord) : elle publie les mesures et les
-dégradations, l'outil du registre applique les règles.
+The CI does not decide R4 and R5 (gain and side-effect thresholds): it publishes the measurements and the degradations,
+the registry's tool applies the rules.
 
-Usage local (simulation) : python3 bee/ci/verdict.py --etats DOSSIER --ab ab.json [--manifeste F] [--tache F]
+Local use (simulation): python3 bee/ci/verdict.py --etats FOLDER --ab ab.json [--manifeste F] [--tache F]
 """
 
 import argparse
@@ -43,18 +48,21 @@ import sys
 
 from vocabulaire import METRIQUES, Illisible, lire_manifeste, metrique_de_la_tache
 
-# (étape, libellé, job GitHub qui la porte), dans l'ordre de la CI. « juges » est écrite par
-# bee/ci/juges.sh dans chaque job ; son job est None : elle compte dès qu'un job l'a écrite.
+# (step, its key in verdict.json, label, GitHub job that carries it), in the CI's order. The step is the name of its state
+# file (<etape>.txt, written by the workflow and the base's scripts); the key and the label are what verdict.json says.
+# « juges » is written by bee/ci/juges.sh in each job; its job is None: it counts as soon as a job has written it.
 ETAPES = [
-    ("juges", "Juges (base sans bee/)", None),
-    ("manifeste_et_taille", "Manifeste et taille", "manifeste"),
-    ("compilation_x86_64", "Compilation et tests d'origine (x86-64)", "compilation-et-tests"),
-    ("compilation_arm64", "Compilation et tests d'origine (ARM64)", "compilation-et-tests"),
-    ("determinisme_x86_64", "Déterminisme du flux d'événements (x86-64)", "compilation-et-tests"),
-    ("determinisme_arm64", "Déterminisme du flux d'événements (ARM64)", "compilation-et-tests"),
-    ("fuzzing", "Fuzzing différentiel de l'analyseur (x86-64)", "fuzzing"),
-    ("banc_ab", "Banc A/B", "banc-ab"),
+    ("juges", "judges", "Judges (base without bee/)", None),
+    ("manifeste_et_taille", "manifest_and_size", "Manifest and size", "manifeste"),
+    ("compilation_x86_64", "build_x86_64", "Build and original tests (x86-64)", "compilation-et-tests"),
+    ("compilation_arm64", "build_arm64", "Build and original tests (ARM64)", "compilation-et-tests"),
+    ("determinisme_x86_64", "determinism_x86_64", "Event stream determinism (x86-64)", "compilation-et-tests"),
+    ("determinisme_arm64", "determinism_arm64", "Event stream determinism (ARM64)", "compilation-et-tests"),
+    ("fuzzing", "fuzzing", "Differential fuzzing of the parser (x86-64)", "fuzzing"),
+    ("banc_ab", "ab_bench", "A/B bench", "banc-ab"),
 ]
+# A step's result in verdict.json; the state files keep « succes » and « echec » (bee/ci/etape.sh, juges.sh).
+RESULTATS = {"succes": "passed", "echec": "failed", "absent": "absent"}
 # Dossier d'état de chaque étape dans les artefacts : celui où le job qui l'écrit le dépose (bee-ci.yml : etats/ à la
 # racine de son artefact, ou sous etats/ quand l'artefact porte aussi ses données). Une étape n'est lue que là, jamais
 # dans un autre artefact ni plus bas.
@@ -65,7 +73,7 @@ DOSSIERS_ETATS = {
     "fuzzing": "etat-fuzzing",
     "banc_ab": "etat-banc/etats",
 }
-# Repris de projets/libyaml.yaml (chemins_hors_decompte) dans le registre Bee, plus le manifeste, dans ses deux dossiers.
+# From projects/libyaml.yaml (paths_not_counted) in the Bee registry, plus the manifest, in both its folders.
 CHEMINS_HORS_DECOMPTE = ["bee/**", "tests/**", "CONTRIBUTION.yaml", "manifests/**", "manifestes/**"]
 
 
@@ -86,7 +94,7 @@ def etats_depuis(dossier_etats, artefacts):
     """Renvoie (états des étapes, amorçage signalé par au moins un job). Dans --etats (le dossier du job verdict, ou
     d'une simulation), chaque <etape>.txt à sa racine ; dans les artefacts, chaque <etape>.txt seulement dans le
     dossier d'état du job qui l'écrit (DOSSIERS_ETATS), « juges » et « amorcage » dans chacun de ces dossiers."""
-    noms = [e for e, _, _ in ETAPES] + ["amorcage"]
+    noms = [e for e, _, _, _ in ETAPES] + ["amorcage"]
     chemins = [os.path.join(dossier_etats, nom + ".txt") for nom in noms] if dossier_etats else []
     for nom in noms if artefacts else []:
         if nom in ("juges", "amorcage"):
@@ -111,32 +119,32 @@ def charger_yaml(chemin):
     try:
         import yaml
     except ImportError:
-        return None, "PyYAML indisponible"
+        return None, "PyYAML unavailable"
     try:
         with open(chemin, encoding="utf-8") as f:
             donnees = yaml.safe_load(f)
-    except Exception as e:  # donnée de la PR : toute erreur de lecture rend simplement la donnée invalide
-        return None, f"illisible ({type(e).__name__})"
-    return (donnees, "ok") if isinstance(donnees, dict) else (None, "pas un objet YAML")
+    except Exception as e:  # PR data: any reading error simply makes the data invalid
+        return None, f"unreadable ({type(e).__name__})"
+    return (donnees, "ok") if isinstance(donnees, dict) else (None, "not a YAML object")
 
 
 def metrique_principale(tache, etat_tache, manifeste, en_ci):
-    """(métrique ou None, origine). Lève Illisible quand la tâche ne dit pas lisiblement sa métrique."""
+    """(metric in English or None, origin). Raises Illisible when the task does not say its metric readably."""
     if tache is not None:
         metrique = metrique_de_la_tache(tache)
-        return metrique, "tâche du registre" if metrique else "tâche du registre (metrique: null)"
+        return metrique, "registry task" if metrique else "registry task (metric: null)"
     if en_ci or etat_tache != "absent":
-        raise Illisible(f"copie de la tâche du registre {etat_tache} : métrique illisible")
+        raise Illisible(f"copy of the registry's task {etat_tache}: metric unreadable")
     if manifeste is not None:
         manifeste = lire_manifeste(manifeste)
-        if manifeste.get("metrique") in METRIQUES:
-            return manifeste["metrique"], "manifeste (clé metrique)"
-        mesures = manifeste.get("mesures") if isinstance(manifeste.get("mesures"), dict) else {}
-        avant = mesures.get("avant") if isinstance(mesures.get("avant"), dict) else {}
+        if manifeste.get("metric") in METRIQUES:
+            return manifeste["metric"], "manifest (key metric)"
+        mesures = manifeste.get("measurements") if isinstance(manifeste.get("measurements"), dict) else {}
+        avant = mesures.get("before") if isinstance(mesures.get("before"), dict) else {}
         connues = [m for m in avant if m in METRIQUES]
         if len(connues) == 1:
-            return connues[0], "manifeste (seule métrique de mesures.avant)"
-    return None, "aucune métrique désignée"
+            return connues[0], "manifest (only metric of measurements.before)"
+    return None, "no metric named"
 
 
 def lignes_modifiees(depot, base, tete):
@@ -154,6 +162,12 @@ def lignes_modifiees(depot, base, tete):
             continue
         total += int(ajoutees) + int(retirees)
     return total
+
+
+def resultat_en_anglais(resultat):
+    """A step's result as verdict.json says it: « succes (job failure) » -> « passed (job failure) »."""
+    mot, _, reste = resultat.partition(" ")
+    return RESULTATS.get(mot, mot) + (" " + reste if reste else "")
 
 
 def trouver_dans(artefacts, artefact, nom):
@@ -190,14 +204,14 @@ def main():
     try:
         metrique, origine = metrique_principale(tache, etat_tache, manifeste, bool(jobs))
     except Illisible as e:
-        # La tâche fixe la métrique, jamais la PR : sans elle, pas de verdict vert (sa copie vient du job manifeste).
-        metrique, origine = None, f"illisible : {e}"
+        # The task sets the metric, never the PR: without it, no green verdict (its copy comes from the manifeste job).
+        metrique, origine = None, f"unreadable: {e}"
         etats["manifeste_et_taille"] = "echec"
         print(f"::error::verdict.py: {e}", file=sys.stderr)
 
     # Étape par étape : réussie seulement si son fichier d'état dit « succes » ET (en CI) si son job a réussi.
     resultat_etapes = {}
-    for etape, _, job in ETAPES:
+    for etape, _, _, job in ETAPES:
         etat = etats.get(etape, "absent")
         if job is None:  # « juges » : un seul « echec » suffit ; absente hors CI (simulation sans juges.sh)
             resultat_etapes[etape] = "echec" if etat == "echec" else ("succes" if etat == "succes" or not jobs else "absent")
@@ -217,9 +231,9 @@ def main():
     jobs_en_echec = [nom for nom, v in jobs.items() if (v or {}).get("result") != "success"]
     # D'abord la première étape explicitement en échec ; sinon la première sans résultat (job annulé,
     # délai dépassé, machine ARM64 indisponible…) ; sinon le job en échec.
-    en_echec = next((libelle for etape, libelle, _ in ETAPES if resultat_etapes[etape].startswith("echec")), None)
+    en_echec = next((libelle for etape, _, libelle, _ in ETAPES if resultat_etapes[etape].startswith("echec")), None)
     if en_echec is None:
-        en_echec = next((libelle + " (sans résultat)" for etape, libelle, _ in ETAPES if resultat_etapes[etape] != "succes"), None)
+        en_echec = next((libelle + " (no result)" for etape, _, libelle, _ in ETAPES if resultat_etapes[etape] != "succes"), None)
     if en_echec is None and jobs_en_echec:
         en_echec = "job " + ", ".join(sorted(jobs_en_echec))
 
@@ -231,44 +245,45 @@ def main():
         except (OSError, ValueError):
             rapport = None
 
-    metriques_ab = (rapport or {}).get("metriques", {})
+    # ab.py's report (bee/bench/ab.py, from the same bee/ folder as this script), in English.
+    metriques_ab = (rapport or {}).get("metrics", {})
     instructions = (rapport or {}).get("instructions")
     gain, bruit = None, False
     if metrique and metrique in metriques_ab:
         gain = metriques_ab[metrique].get("gain")
-        bruit = bool(metriques_ab[metrique].get("au_dela_du_bruit"))
-    degradations = {m: v.get("gain") for m, v in metriques_ab.items() if v.get("degradation_au_dela_du_bruit")}
+        bruit = bool(metriques_ab[metrique].get("beyond_noise"))
+    degradations = {m: v.get("gain") for m, v in metriques_ab.items() if v.get("degradation_beyond_noise")}
     for nom, v in (instructions or {}).items():
-        if v.get("au_dela_du_bruit") and (v.get("gain") or 0) < 0:
+        if v.get("beyond_noise") and (v.get("gain") or 0) < 0:
             degradations[nom] = v.get("gain")
 
-    # « verte » exige que toutes les étapes aient réussi ET (en CI) que tous les jobs aient réussi.
+    # « green » requires every step to have passed AND (in CI) every job to have passed.
     if en_echec is None and any(v != "succes" for v in resultat_etapes.values()):
-        en_echec = "étape au résultat incohérent"
-    verdict = {"ci": "rouge" if en_echec else "verte"}
+        en_echec = "step with an inconsistent result"
+    verdict = {"ci": "red" if en_echec else "green"}
     if en_echec:
-        verdict["etape_en_echec"] = en_echec
+        verdict["failed_step"] = en_echec
     verdict.update({
         "gain": gain,
-        "metrique": metrique,
-        "au_dela_du_bruit": bruit,
-        "mesures": (rapport or {}).get("mesures") or {"A": {m: None for m in METRIQUES}, "B": {m: None for m in METRIQUES}},
+        "metric": metrique,
+        "beyond_noise": bruit,
+        "measurements": (rapport or {}).get("measurements") or {"A": {m: None for m in METRIQUES}, "B": {m: None for m in METRIQUES}},
         "instructions": ({nom: {"A": v.get("A"), "B": v.get("B"), "gain": v.get("gain")} for nom, v in instructions.items()}
                          if instructions else None),
         "degradations": degradations,
-        "lignes_modifiees": lignes_modifiees(args.depot, args.base, args.tete),
-        "amorcage": amorcage,
-        "etapes": resultat_etapes,
+        "changed_lines": lignes_modifiees(args.depot, args.base, args.tete),
+        "bootstrap": amorcage,
+        "steps": {cle: resultat_en_anglais(resultat_etapes[etape]) for etape, cle, _, _ in ETAPES},
         "details": {
-            "origine_metrique": origine,
-            "manifeste": etat_manifeste,
-            "tache": etat_tache,
+            "metric_origin": origine,
+            "manifest": etat_manifeste,
+            "task": etat_tache,
             "base": args.base,
-            "tete": args.tete,
+            "head": args.tete,
             "jobs": {nom: (v or {}).get("result") for nom, v in jobs.items()},
-            "gains_par_metrique": {m: v.get("gain") for m, v in metriques_ab.items()},
-            "test_du_signe": {m: v.get("test_du_signe") for m, v in metriques_ab.items()},
-            "methode": (rapport or {}).get("methode"),
+            "gains_by_metric": {m: v.get("gain") for m, v in metriques_ab.items()},
+            "sign_test": {m: v.get("sign_test") for m, v in metriques_ab.items()},
+            "method": (rapport or {}).get("method"),
             "machine": (rapport or {}).get("machine"),
             "repetitions": (rapport or {}).get("repetitions"),
         },
@@ -276,10 +291,10 @@ def main():
     with open(args.sortie, "w", encoding="utf-8") as f:
         json.dump(verdict, f, ensure_ascii=False, indent=2)
         f.write("\n")
-    resume = {k: verdict[k] for k in ("ci", "etape_en_echec", "gain", "metrique", "au_dela_du_bruit", "degradations",
-                                      "lignes_modifiees", "amorcage") if k in verdict}
+    resume = {k: verdict[k] for k in ("ci", "failed_step", "gain", "metric", "beyond_noise", "degradations",
+                                      "changed_lines", "bootstrap") if k in verdict}
     if amorcage:
-        print("BOOTSTRAP: the judges of this run came from the PR itself (amorcage: true).", file=sys.stderr)
+        print("BOOTSTRAP: the judges of this run came from the PR itself (bootstrap: true).", file=sys.stderr)
     print(json.dumps(resume, ensure_ascii=False))
     return 0
 

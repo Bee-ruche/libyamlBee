@@ -1,8 +1,8 @@
 # Bee evaluation tooling for libyaml
 
 This `bee/` folder holds everything that **judges** the contributions to this fork: corpus, determinism
-oracle, measurement bench, and (to come) fuzzing and CI. The code of libyaml itself is not modified
-here. libyamlBee is an **independent fork** of [libyaml](https://github.com/yaml/libyaml), run by the
+oracle, emitter round trip, measurement bench, differential fuzzing and the CI's scripts (`bee/ci/`, run by
+`.github/workflows/bee-ci.yml`). The code of libyaml itself is not modified here. libyamlBee is an **independent fork** of [libyaml](https://github.com/yaml/libyaml), run by the
 [Bee](https://github.com/Bee-ruche/registre) project; it is not affiliated with the original project.
 
 ## What a contribution must respect
@@ -45,6 +45,12 @@ format: `+STR`, `+MAP &anchor <tag>`, `=VAL`, `=ALI`, …). Its SHA-256 fingerpr
 are compared with `bee/tests/empreintes-reference.txt`, frozen at the base revision. The slightest
 difference fails the tests.
 
+The same script runs the emitter's round trip (`bee/tests/aller_retour.c`, libyaml-0003): each file is
+parsed, its events are emitted again by libyaml's emitter, the output is parsed again and must give the
+same event stream (the tolerated normalizations are listed at the top of `aller_retour.c`). The
+fingerprint of the emitted text and the status are compared with `bee/tests/empreintes-aller-retour.txt`;
+a failed round trip always fails, even with `--sans-empreintes`.
+
 ## Measurement bench
 
 ```bash
@@ -53,12 +59,17 @@ bee/construction/banc/banc --corpus bee/corpus/donnees --passes 3
 python3 bee/bench/ab.py --base upstream/master --candidate HEAD --repetitions 10 --instructions
 ```
 
-Four metrics: `debit_analyse` (event parser alone), `debit_chargement`
-(`yaml_parser_load`, document tree), `debit_emission` (`yaml_emitter_dump`), `memoire_max_ko`
+Four metrics: `parse_throughput` (event parser alone), `load_throughput`
+(`yaml_parser_load`, document tree), `emit_throughput` (`yaml_emitter_dump`), `max_memory_kb`
 (heap peak of a child process that loads and emits the whole corpus). `ab.py` compares two revisions in
 strict alternation and decides what is beyond noise with a **sign test** on the interleaved pairs (at least
-9 pairs won out of 10); with `--instructions`, it also counts instructions (Cachegrind).
-YAML parsing is CPU-bound: a drop in instructions shows on the stopwatch.
+9 pairs won out of 10); with `--instructions`, it also counts instructions (Cachegrind): `instructions_parse`,
+`instructions_load`, `instructions_emit`. YAML parsing is CPU-bound: a drop in instructions shows on the stopwatch.
+
+The bench, `ab.py`'s JSON report and the CI's `verdict.json` are written in English (the registry's
+`tools/migration/names.yaml`). Until the registry renames its metric ids (ruche-0149), its tasks and
+`projects/libyaml.yaml` still say `debit_analyse`, `debit_chargement`, `debit_emission` and `memoire_max_ko`:
+the CI reads both names, and `bee record-measurement` and `bee record-verdict` read both too.
 
 ## Corpus
 
@@ -68,6 +79,19 @@ styles, varied depths) and fixed samples that cover the flow style, anchors and 
 multi-document streams, comments, literal and folded scalars, tags, and a few realistic
 configurations (Kubernetes, CI). No data is downloaded.
 
+## Differential fuzzing
+
+```bash
+bee/sandbox/sans-docker.sh bee/fuzz/lancer.sh 60     # 60 seconds, this repository's sources
+```
+
+`bee/fuzz/fuzz_parse.c` (libyaml-0002) parses arbitrary input under ASan and UBSan, whole or in chunks of k
+bytes. With `--reference`, a second copy of libyaml (the base) is linked into the same binary, and the event
+stream and error status of both must be identical; each faulty input is replayed on the base alone, to tell a
+new discrepancy from a pre-existing one. libFuzzer with clang, otherwise a gcc fallback with a random driver.
+The CI runs it for 600 seconds on x86-64, base against PR. `bee/fuzz/lancer.sh` without arguments prints its
+options.
+
 ## Scope
 
 The paths that judge the contributions (`bee/**`, `tests/**`, `.github/**`) cannot be
@@ -76,10 +100,11 @@ and `include/yaml.h`.
 
 ## Known limits
 
-- **Emitter and round trip.** The oracle checks parsing. A round-trip check (events
-  → YAML → identical events) for emitter optimizations remains to be added.
-- **Fuzzing.** The parser's differential fuzzing harness (arbitrary input, ASan/UBSan)
-  is not written yet: it is a good Bee task to harden the fork.
-- **Sandbox.** The Dockerfile is not pinned by digest yet.
+- **Round trip.** Only the event API is covered (`yaml_emitter_emit`), with the emitter's default
+  settings: the document API (`yaml_parser_load` then `yaml_emitter_dump`, `dumper.c`), which
+  `emit_throughput` measures, and the non-default settings (canonical, unicode, width, indentation,
+  line breaks) are not (manifestes/libyaml-0003.yaml).
+- **Fuzzing.** Only the parser is fuzzed (`fuzz_parse.c`); the loader and the emitter are not.
+- **Sandbox.** No Docker image yet: only `bee/sandbox/sans-docker.sh`, on Linux.
 - **Not checked beyond this machine.** The first figures come from a single environment; the
   registry's distributed bench (`bee record-measurement`) will extend them to other configurations.

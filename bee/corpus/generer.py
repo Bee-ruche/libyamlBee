@@ -217,11 +217,11 @@ def comparer(obtenues, attendues):
     problemes = []
     for nom in sorted(set(obtenues) | set(attendues)):
         if nom not in obtenues:
-            problemes.append(f"manquant : {nom}")
+            problemes.append(f"missing: {nom}")
         elif nom not in attendues:
-            problemes.append(f"en trop : {nom}")
+            problemes.append(f"extra: {nom}")
         elif obtenues[nom] != attendues[nom]:
-            problemes.append(f"somme différente : {nom}")
+            problemes.append(f"different checksum: {nom}")
     return problemes
 
 
@@ -254,16 +254,16 @@ def main():
             f.write("# Vérification manuelle : cd bee/corpus/donnees && grep -v '^#' ../SHA256SUMS | sha256sum -c\n")
             for nom in sorted(obtenues):
                 f.write(f"{obtenues[nom]}  {nom}\n")
-        print(f"SHA256SUMS réécrit : {len(obtenues)} fichiers, {total} octets.")
+        print(f"SHA256SUMS rewritten: {len(obtenues)} files, {total} bytes.")
         return 0
 
     problemes = comparer(obtenues, lire_sommes(SOMMES_REFERENCE))
     if problemes:
-        print("ÉCHEC : le corpus ne correspond pas à bee/corpus/SHA256SUMS :", file=sys.stderr)
+        print("FAILURE: the corpus does not match bee/corpus/SHA256SUMS:", file=sys.stderr)
         for p in problemes[:50]:
             print("  " + p, file=sys.stderr)
         return 1
-    print(f"Corpus conforme : {len(obtenues)} fichiers, {total} octets ({total / 1e6:.2f} Mo), dans {args.sortie}.")
+    print(f"Corpus matches SHA256SUMS: {len(obtenues)} files, {total} bytes ({total / 1e6:.2f} MB), in {args.sortie}.")
     return 0
 
 

@@ -9,7 +9,7 @@ The rules, the tasks and the `bee` tool are not here: they live in the registry,
 | Path | Role | Can an optimization change it? |
 | --- | --- | --- |
 | `src/*.c`, `include/yaml.h` | The libyaml library | Yes, within your task's `files` |
-| `bee/` | Evaluation tooling: corpus, determinism oracle, A/B bench (and, to come, fuzzing and CI) | No (judge path) |
+| `bee/` | Evaluation tooling: corpus, determinism oracle, emitter round trip, A/B bench, differential fuzzing, CI scripts | No (judge path) |
 | `tests/`, `.github/` | Original tests and CI | No (judge path) |
 
 ## The invariant

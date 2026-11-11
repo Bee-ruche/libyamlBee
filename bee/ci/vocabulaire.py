@@ -1,39 +1,34 @@
-"""Les deux vocabulaires du registre Bee, français et anglais (docs/english-names.md du registre).
+"""The Bee registry's names, as libyamlBee reads them (bee/ci/tache.py, bee/ci/verdict.py).
 
-Le registre passe tous ses noms en anglais en une seule bascule (docs/english-migration.md, sections 6, 12 et 13). Le
-job « Manifeste et taille » lit le registre sur main, sans épingle : libyamlBee lit donc les deux formes, avant comme
-après, et ramène tout à ses noms internes (français). Les identifiants de métrique restent les mêmes dans les deux.
+The registry writes English since its switch (ruche-0145): tasks/, projects/, tools/, English keys and values. libyamlBee
+reads only those, with one exception: metric ids. The registry still writes them in French until it renames its data
+(ruche-0149), so they are read in either vocabulary, one per document, and brought to their English names, the ones
+libyamlBee's bench writes (bee/bench/ab.py).
 
-Un document (tâche, manifeste, descripteur de projet) est dans UN vocabulaire : un document qui mêle des clés des deux
-est refusé. Ce qu'on ne sait pas lire lève Illisible, jamais une valeur par défaut.
+A PR's manifest is read in either vocabulary until the registry stops reading French manifests (bee's DATE_D,
+2027-01-01): one vocabulary per manifest, brought to English keys. What cannot be read raises Illisible, never a
+default value.
 """
 
 
 class Illisible(ValueError):
-    """Une donnée du registre ou de la PR que libyamlBee ne sait pas lire : l'étape échoue avec ce message."""
+    """Data from the registry or the PR that libyamlBee cannot read: the step fails with this message."""
 
 
-# Les métriques que le banc de libyamlBee mesure (bee/bench/ab.py) : celles que verdict.py sait juger.
-METRIQUES = ["debit_analyse", "debit_chargement", "debit_emission", "memoire_max_ko"]
-# Valeurs énumérées d'une tâche, français → anglais (« test » est le même mot).
-TYPES = {"optimisation": "optimization", "relecture": "review", "mesure": "measurement", "test": "test", "decoupage": "split"}
-SORTIES = {"identique": "identical", "peut_changer": "may_change"}
-# Clés d'une tâche (schemas/tache.schema.json), français → anglais ; id, type, notes, contribution et reservation
-# s'écrivent de même dans les deux.
-CLES_TACHE = {"projet": "project", "categorie": "category", "taille": "size", "titre": "title", "contexte": "context",
-              "fichiers": "files", "portee": "reach", "metrique": "metric", "critere_acceptation": "acceptance_criteria",
-              "hors_perimetre": "out_of_scope", "statut": "status", "cree_par": "created_by", "cree_le": "created_on",
-              "noeud": "node", "depend_de": "depends_on", "poste": "area", "paralleles": "parallel",
-              "sortie_compressee": "compressed_output"}
-# Clés du descripteur de projet (schemas/projet.schema.json) ; id, fork, reference, description et instructions sont
-# les mêmes. Une métrique y a toujours unite et sens : son vocabulaire est vérifié avec celui du document.
-CLES_PROJET = {"nom": "name", "categorie": "category", "depot_origine": "upstream_repo", "licence": "license",
-               "perimetre": "scope", "hors_perimetre": "out_of_scope", "statut": "status", "phase_ouverture": "opening_phase",
-               "palier_mainteneur": "maintainer_tier", "metriques": "metrics", "chemins_hors_decompte": "paths_not_counted",
-               "chemins_juges": "judge_paths", "commandes": "commands", "verdict_exige_base_juge": "verdict_requires_judge_base"}
-CLES_METRIQUE = {"unite": "unit", "sens": "direction"}
-# Clés d'un manifeste (schemas/contribution.schema.json), par niveau ; agent, client, machine et repetitions sont
-# les mêmes. « metrique » n'est pas au schéma, mais verdict.py la lit (simulation locale sans tâche).
+# The metrics libyamlBee's bench measures (bee/bench/ab.py), in their English names: the ones verdict.py can judge.
+METRIQUES = ["parse_throughput", "load_throughput", "emit_throughput", "max_memory_kb"]
+# Their French names, and those of the instruction counts, as the registry writes them until ruche-0149 renames its data
+# (tools/migration/names.yaml, domain metric_id).
+METRIQUES_FR = {"debit_analyse": "parse_throughput", "debit_chargement": "load_throughput",
+                "debit_emission": "emit_throughput", "memoire_max_ko": "max_memory_kb",
+                "instructions_analyse": "instructions_parse", "instructions_chargement": "instructions_load",
+                "instructions_emission": "instructions_emit"}
+# Enumerated values of a task.
+TYPES = ("optimization", "review", "measurement", "test", "split")
+SORTIES = ("identical", "may_change")
+# Keys of a manifest (the registry's schemas/manifest.schema.json), French -> English, per level; agent, client, machine
+# and repetitions are the same in both. « metric » is not in the schema, but verdict.py reads it (local simulation
+# without a task).
 CLES_MANIFESTE = {"tache": "task", "utilisateur": "user", "resume": "summary", "changement": "change",
                   "mesures": "measurements", "teste": "tested", "non_teste": "untested", "doutes": "doubts",
                   "taille_reelle": "actual_size", "metrique": "metric"}
@@ -41,8 +36,71 @@ CLES_AGENT = {"modele": "model"}
 CLES_MESURES = {"commande": "command", "avant": "before", "apres": "after"}
 
 
+def metrique_anglaise(nom):
+    """A metric id in its English name (a French id of METRIQUES_FR translated, any other value as it is)."""
+    return METRIQUES_FR.get(nom, nom) if isinstance(nom, str) else nom
+
+
+def vocabulaire_des_metriques(noms, quoi):
+    """Refuses a document that names metrics in both vocabularies (Illisible)."""
+    francais = sorted(n for n in noms if isinstance(n, str) and n in METRIQUES_FR)
+    anglais = sorted(n for n in noms if isinstance(n, str) and n in METRIQUES_FR.values())
+    if francais and anglais:
+        raise Illisible(f"{quoi} mixes French metric ids ({', '.join(francais)}) and English ones ({', '.join(anglais)}): refused")
+
+
+def metrique_de_la_tache(donnees, connues=METRIQUES):
+    """The task's main metric, in its English name: an id of `connues`, or None if the task says explicitly that it has
+    none (metric: null). Key missing, or metric unknown: Illisible (the verdict never picks its own)."""
+    if not isinstance(donnees, dict):
+        raise Illisible("the task does not contain a YAML object")
+    if "metric" not in donnees:
+        raise Illisible("key « metric » missing from the task: metric unreadable")
+    if donnees["metric"] is None:
+        return None
+    metrique = metrique_anglaise(donnees["metric"])
+    if not isinstance(metrique, str) or metrique not in connues:
+        raise Illisible(f"metric « {donnees['metric']} » unknown (expected: {', '.join(sorted(connues))} or null)")
+    return metrique
+
+
+def valeur(tache, cle, valeurs):
+    """An enumerated value of the task; a value outside `valeurs`, or missing: Illisible."""
+    v = tache.get(cle)
+    if not isinstance(v, str) or v not in valeurs:
+        raise Illisible(f"{cle} « {v} » unreadable in the task (expected: {', '.join(sorted(valeurs))})")
+    return v
+
+
+def lire_tache(donnees, connues):
+    """type, metric and compressed_output of the task; `connues`: the project's metrics (English names). A missing
+    compressed_output means « identical », the strictest check; present, it must be readable. An optimization without
+    a metric (metric: null) is unreadable: R4 would have nothing to judge."""
+    metrique = metrique_de_la_tache(donnees, connues)
+    sortie = valeur(donnees, "compressed_output", SORTIES) if "compressed_output" in donnees else "identical"
+    type_tache = valeur(donnees, "type", TYPES)
+    if type_tache == "optimization" and metrique is None:
+        raise Illisible("an optimization task without a metric (metric: null): unreadable, R4 would have nothing to judge")
+    return {"type": type_tache, "metric": metrique, "compressed_output": sortie}
+
+
+def metriques_du_projet(donnees):
+    """The metric ids of the project descriptor, in their English names. Without the key metrics, an empty list, a metric
+    without an id, or ids in both vocabularies: Illisible, never an empty list."""
+    if not isinstance(donnees, dict):
+        raise Illisible("the project descriptor does not contain a YAML object")
+    liste = donnees.get("metrics")
+    if not isinstance(liste, list) or not liste:
+        raise Illisible("key « metrics » missing, empty or not a list in the project descriptor: metrics unreadable")
+    ids = [m.get("id") if isinstance(m, dict) else None for m in liste]
+    if not all(isinstance(i, str) and i for i in ids):
+        raise Illisible(f"a metric of the project descriptor has no id ({ids}): metrics unreadable")
+    vocabulaire_des_metriques(ids + [m.get("instructions") for m in liste], "the project descriptor")
+    return [metrique_anglaise(i) for i in ids]
+
+
 def langue(niveaux, quoi):
-    """« fr », « en » ou None (aucune clé propre à l'un ou à l'autre) pour des (objet, carte) d'un même document."""
+    """« fr », « en » or None (no key specific to either) for (mapping, map) pairs of one document."""
     francais = sorted(k for d, carte in niveaux for k in d if k in carte)
     anglais = sorted(k for d, carte in niveaux for k in d if k in carte.values())
     if francais and anglais:
@@ -50,83 +108,28 @@ def langue(niveaux, quoi):
     return "en" if anglais else ("fr" if francais else None)
 
 
-def en_francais(d, carte, langue_document):
-    inverse = {en: fr for fr, en in carte.items()} if langue_document == "en" else {}
-    return {inverse.get(k, k): v for k, v in d.items()}
-
-
-def tache_en_francais(donnees):
-    """La tâche avec ses clés internes (françaises). Ses valeurs restent dans son vocabulaire : voir valeur()."""
-    if not isinstance(donnees, dict):
-        raise Illisible("the task does not contain a YAML object")
-    langue_tache = langue([(donnees, CLES_TACHE)], "the task")
-    if langue_tache is None:
-        raise Illisible("the task has no known key, neither French nor English: unreadable")
-    return en_francais(donnees, CLES_TACHE, langue_tache), langue_tache
-
-
-def valeur(tache, cle, valeurs, langue_tache):
-    """Valeur énumérée, ramenée au français ; une valeur de l'autre vocabulaire, ou inconnue : Illisible."""
-    v = tache.get(cle)
-    connues = {en: fr for fr, en in valeurs.items()} if langue_tache == "en" else {fr: fr for fr in valeurs}
-    if not isinstance(v, str) or v not in connues:
-        raise Illisible(f"{cle} « {v} » unreadable in a task in {'English' if langue_tache == 'en' else 'French'} "
-                        f"(expected: {', '.join(sorted(connues))})")
-    return connues[v]
-
-
-def metrique_de_la_tache(donnees, connues=METRIQUES):
-    """La métrique principale de la tâche : un identifiant de `connues`, ou None si la tâche dit explicitement qu'elle
-    n'en a pas (metrique: null). Clé absente, ou métrique inconnue : Illisible (le verdict ne choisit jamais la sienne)."""
-    tache, langue_tache = tache_en_francais(donnees)
-    if "metrique" not in tache:
-        raise Illisible(f"key « {'metric' if langue_tache == 'en' else 'metrique'} » missing from the task: metric unreadable")
-    if tache["metrique"] is not None and tache["metrique"] not in connues:
-        raise Illisible(f"metric « {tache['metrique']} » unknown (expected: {', '.join(sorted(connues))} or null)")
-    return tache["metrique"]
-
-
-def lire_tache(donnees, connues):
-    """type, metrique et sortie_compressee de la tâche, en noms internes ; `connues` : les métriques du projet. Une
-    sortie_compressee absente vaut « identique », le contrôle le plus strict ; présente, elle doit être lisible. Une
-    optimisation sans métrique (metric: null) est illisible : R4 n'aurait rien à juger."""
-    metrique = metrique_de_la_tache(donnees, connues)
-    tache, langue_tache = tache_en_francais(donnees)
-    sortie = valeur(tache, "sortie_compressee", SORTIES, langue_tache) if "sortie_compressee" in tache else "identique"
-    type_tache = valeur(tache, "type", TYPES, langue_tache)
-    if type_tache == "optimisation" and metrique is None:
-        raise Illisible("an optimization task without a metric (metric: null): unreadable, R4 would have nothing to judge")
-    return {"type": type_tache, "metrique": metrique, "sortie_compressee": sortie}
-
-
-def metriques_du_projet(donnees):
-    """Les identifiants des métriques du descripteur de projet (metrics ou metriques). Document mêlé (métriques
-    comprises), sans cette clé, liste vide ou métrique sans identifiant : Illisible, jamais une liste vide."""
-    if not isinstance(donnees, dict):
-        raise Illisible("the project descriptor does not contain a YAML object")
-    liste = donnees.get("metrics", donnees.get("metriques"))
-    liste = liste if isinstance(liste, list) else None
-    niveaux = [(donnees, CLES_PROJET)] + [(m, CLES_METRIQUE) for m in liste or [] if isinstance(m, dict)]
-    langue_projet = langue(niveaux, "the project descriptor")
-    if langue_projet is None or not liste:
-        cle = "metrics" if langue_projet == "en" else "metriques"
-        raise Illisible(f"key « {cle} » missing, empty or not a list in the project descriptor: metrics unreadable")
-    ids = [m.get("id") if isinstance(m, dict) else None for m in liste]
-    if not all(isinstance(i, str) and i for i in ids):
-        raise Illisible(f"a metric of the project descriptor has no id ({ids}): metrics unreadable")
-    return ids
+def en_anglais(d, carte, langue_document):
+    return {carte.get(k, k): v for k, v in d.items()} if langue_document == "fr" else dict(d)
 
 
 def lire_manifeste(donnees):
-    """Le manifeste de la PR avec ses clés internes (françaises), à ses trois niveaux. Mêlé : Illisible."""
+    """The PR's manifest with English keys, at its three levels; its metric ids in English. Mixed: Illisible."""
     if not isinstance(donnees, dict):
         raise Illisible("the manifest does not contain a YAML object")
     niveaux = [(donnees, CLES_MANIFESTE)]
     niveaux += [(donnees[c], CLES_AGENT) for c in ("agent",) if isinstance(donnees.get(c), dict)]
     niveaux += [(donnees[c], CLES_MESURES) for c in ("mesures", "measurements") if isinstance(donnees.get(c), dict)]
     langue_manifeste = langue(niveaux, "the manifest")
-    manifeste = en_francais(donnees, CLES_MANIFESTE, langue_manifeste)
-    for cle, carte in (("agent", CLES_AGENT), ("mesures", CLES_MESURES)):
+    manifeste = en_anglais(donnees, CLES_MANIFESTE, langue_manifeste)
+    for cle, carte in (("agent", CLES_AGENT), ("measurements", CLES_MESURES)):
         if isinstance(manifeste.get(cle), dict):
-            manifeste[cle] = en_francais(manifeste[cle], carte, langue_manifeste)
+            manifeste[cle] = en_anglais(manifeste[cle], carte, langue_manifeste)
+    mesures = manifeste.get("measurements") if isinstance(manifeste.get("measurements"), dict) else {}
+    cotes = [mesures[c] for c in ("before", "after") if isinstance(mesures.get(c), dict)]
+    vocabulaire_des_metriques([manifeste.get("metric")] + [n for d in cotes for n in d], "the manifest")
+    if "metric" in manifeste:
+        manifeste["metric"] = metrique_anglaise(manifeste["metric"])
+    for c in ("before", "after"):
+        if isinstance(mesures.get(c), dict):
+            mesures[c] = {metrique_anglaise(n): v for n, v in mesures[c].items()}
     return manifeste

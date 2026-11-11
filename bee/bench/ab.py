@@ -1,49 +1,47 @@
 #!/usr/bin/env python3
-"""Banc A/B entrelacé de Bee pour miniz.
+"""Bee's interleaved A/B bench for libyaml.
 
-Compare deux révisions de miniz sur le corpus de référence :
+Compares two revisions of libyaml on the reference corpus:
 
-  python3 bee/bench/ab.py --base <rev> --candidate <rev> [--repetitions 10] [--instructions] [--json sortie.json]
+  python3 bee/bench/ab.py --base <rev> --candidate <rev> [--repetitions 10] [--instructions] [--json output.json]
 
-Déroulement :
-  1. Chaque révision est extraite dans un dossier temporaire séparé (git worktree, en mode détaché).
-     La valeur spéciale « :travail » désigne la copie de travail courante, modifications non commitées comprises.
-  2. Le banc (bee/bench/banc.c) et le Makefile de l'outillage courant (le dossier bee/ qui contient ce
-     script) sont compilés contre les sources de miniz de chaque révision : seul le code de la
-     bibliothèque diffère entre A et B, le banc est le même.
-  3. Après une exécution de chauffe non comptée de chacun (--chauffe), les deux binaires tournent en
-     alternance stricte, A, B, A, B…, N fois chacun ; chaque exécution mesure les six métriques. Dans une
-     exécution, chaque débit est le meilleur de k passes sur le corpus (voir banc.c). On retient la
-     médiane des N valeurs de chaque métrique pour A et pour B.
-  4. Gain relatif (positif = mieux) : médiane(B) / médiane(A) - 1 pour une métrique « plus haut »,
-     1 - médiane(B) / médiane(A) pour une métrique « plus bas » (memoire_max_ko).
-  5. Bruit, par un test du signe sur les paires entrelacées. La répétition i mesure A_i puis B_i côte à
-     côte : la paire i subit à peu près la même charge de la machine. B « gagne » la paire si B_i est
-     meilleur que A_i (plus haut, ou plus bas pour memoire_max_ko). Les paires à égalité sont écartées
-     (test du signe standard) : N désigne ensuite le nombre de paires non égales. Si A et B sont
-     équivalents, le nombre X de paires gagnées par B suit une loi binomiale (N, 1/2).
-     Seuil : k = plus petit entier tel que P(X >= k | N, 1/2) <= 0,02 (test unilatéral) :
+How it runs:
+  1. Each revision is checked out in a separate temporary folder (git worktree, detached).
+     The special value « :travail » names the current working copy, uncommitted changes included.
+  2. The bench (bee/bench/banc.c) and the Makefile of the current tooling (the bee/ folder that holds this script) are
+     built against the libyaml sources of each revision: only the library's code differs between A and B, the bench is
+     the same.
+  3. After one uncounted warm-up run of each (--chauffe), the two binaries run in strict alternation, A, B, A, B…,
+     N times each; each run measures the four metrics. In one run, each throughput is the best of k passes over the
+     corpus (see banc.c). The median of the N values of each metric is kept for A and for B.
+  4. Relative gain (positive = better): median(B) / median(A) - 1 for a « higher » metric,
+     1 - median(B) / median(A) for a « lower » metric (max_memory_kb).
+  5. Noise, by a sign test on the interleaved pairs. Repetition i measures A_i then B_i side by side: pair i sees about
+     the same load of the machine. B « wins » the pair if B_i is better than A_i (higher, or lower for max_memory_kb).
+     Tied pairs are set aside (standard sign test): N then means the number of untied pairs. If A and B are
+     equivalent, the number X of pairs won by B follows a binomial distribution (N, 1/2).
+     Threshold: k = the smallest integer such that P(X >= k | N, 1/2) <= 0.02 (one-sided test):
          N  :  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20
          k  :  6  7  8  8  9 10 10 11 12 12 13 14 14 15 16
-     Pour N = 10, k = 9 (p = 0,0107). En dessous de 6 paires non égales, aucun seuil n'atteint 0,02 :
-     rien n'est « au-delà du bruit » (ab.py prévient si --repetitions est inférieur à 6).
-       - au_dela_du_bruit : B gagne au moins k paires (amélioration significative) ;
-       - degradation_au_dela_du_bruit : A gagne au moins k paires (dégradation significative, pour R5).
-     Métrique déterministe (ratio_n6) : si rien ne change, toutes les paires sont à égalité, et le
-     test ne conclut ni à un gain ni à une dégradation ; si la valeur change, B gagne (ou perd) toutes
-     les paires, et l'écart est significatif. memoire_max_ko est presque déterministe : les
-     égalités sont écartées, et l'écart se juge sur les seules paires différentes.
-     Tests unitaires : python3 bee/bench/test_ab.py
-     Les intervalles [min, max] sont gardés dans le JSON à titre d'information (minmax_disjoints) ; ce
-     critère, plus prudent, n'avait pas vu un ralentissement réel de 5 % au niveau 6.
-  6. Avec --instructions, chaque binaire passe aussi sous valgrind --tool=cachegrind, une fois par
-     scénario (n1, n6, n9, decompression) sur un sous-ensemble du corpus (les 128 premiers Kio de
-     chaque fichier, environ 3,3 Mo). Seules les passes chronométrées sont comptées (requêtes client
-     Cachegrind). Le décompte est reproductible ; un écart est « au-delà du bruit » s'il dépasse
-     --seuil-instructions (0,2 % par défaut).
+     For N = 10, k = 9 (p = 0.0107). Below 6 untied pairs, no threshold reaches 0.02: nothing is « beyond noise »
+     (ab.py warns if --repetitions is below 6).
+       - beyond_noise: B wins at least k pairs (significant improvement);
+       - degradation_beyond_noise: A wins at least k pairs (significant degradation, for R5).
+     max_memory_kb is almost deterministic: the ties are set aside, and the difference is judged on the differing
+     pairs only.
+     Unit tests: python3 bee/bench/test_ab.py
+     The [min, max] intervals are kept in the JSON for information (minmax_disjoint); this more cautious criterion had
+     missed a real 5 % slowdown (minizBee's bench, level 6).
+  6. With --instructions, each binary also runs under valgrind --tool=cachegrind, once per scenario (parse, load,
+     emit) on a subset of the corpus (the first --prefixe-instructions bytes of each file, 128 KiB by default). Only
+     the timed passes are counted (Cachegrind client requests). The count is reproducible; a difference is « beyond
+     noise » if it exceeds --seuil-instructions (0.2 % by default).
 
-Sortie : le JSON sur stdout (et dans --json), un tableau lisible sur stderr.
-Code de sortie : 0 si la mesure a abouti (quel que soit le résultat), 2 en cas d'erreur.
+Output: the JSON report on stdout (and in --json), in English: its keys follow the registry's tools/migration/names.yaml
+(families ab_report and judge_report), its metric ids are parse_throughput, load_throughput, emit_throughput,
+max_memory_kb and instructions_parse, instructions_load, instructions_emit (domain metric_id); bee record-measurement
+reads it. A readable table on stderr.
+Exit code: 0 if the measurement completed (whatever the result), 2 on error.
 """
 
 import argparse
@@ -62,14 +60,16 @@ import time
 ICI = os.path.dirname(os.path.abspath(__file__))
 OUTILLAGE = os.path.dirname(ICI)  # dossier bee/
 
-# Mêmes définitions que projets/libyaml.yaml dans le registre Bee.
+# The same definitions as projects/libyaml.yaml in the Bee registry, with the English metric ids (names.yaml, domain
+# metric_id), which the bench writes too (banc.c), with the direction and the unit in English (domains direction, unit).
 METRIQUES = [
-    ("debit_analyse", "plus_haut", "Mo/s"),
-    ("debit_chargement", "plus_haut", "Mo/s"),
-    ("debit_emission", "plus_haut", "Mo/s"),
-    ("memoire_max_ko", "plus_bas", "Ko"),
+    ("parse_throughput", "higher", "MB/s"),
+    ("load_throughput", "higher", "MB/s"),
+    ("emit_throughput", "higher", "MB/s"),
+    ("max_memory_kb", "lower", "KB"),
 ]
-SCENARIOS_INSTRUCTIONS = ["analyse", "chargement", "emission"]
+# banc.c's scenario (its option --scenario) -> the instruction count's id.
+SCENARIOS_INSTRUCTIONS = {"analyse": "instructions_parse", "chargement": "instructions_load", "emission": "instructions_emit"}
 TRAVAIL = ":travail"
 
 
@@ -93,7 +93,7 @@ def resoudre(depot, rev):
     if rev == TRAVAIL:
         tete = executer(["git", "-C", depot, "rev-parse", "HEAD"]).strip()
         sale = bool(executer(["git", "-C", depot, "status", "--porcelain", "--untracked-files=no"]).strip())
-        return {"rev": rev, "commit": tete, "modifications_non_commitees": sale}
+        return {"rev": rev, "commit": tete, "uncommitted_changes": sale}
     try:
         commit = executer(["git", "-C", depot, "rev-parse", "--verify", "--quiet", rev + "^{commit}"]).strip()
     except Erreur:
@@ -102,7 +102,7 @@ def resoudre(depot, rev):
 
 
 def preparer_source(depot, info, dossier_travail, etiquette):
-    """Renvoie le dossier qui contient les sources de miniz de la révision."""
+    """Returns the folder that holds the revision's libyaml sources."""
     if info["rev"] == TRAVAIL:
         return depot, None
     chemin = os.path.join(dossier_travail, "source-" + etiquette)
@@ -178,33 +178,33 @@ def test_du_signe(valeurs_a, valeurs_b, sens):
     Les égalités sont écartées ; le seuil k et les valeurs p se calculent sur les N' paires restantes.
     Si toutes les paires sont à égalité (N' = 0), il n'y a ni gain ni dégradation."""
     paires = [(a, b) for a, b in zip(valeurs_a, valeurs_b) if a is not None and b is not None]
-    meilleur = (lambda a, b: b > a) if sens == "plus_haut" else (lambda a, b: b < a)
+    meilleur = (lambda a, b: b > a) if sens == "higher" else (lambda a, b: b < a)
     victoires_b = sum(1 for a, b in paires if meilleur(a, b))
     victoires_a = sum(1 for a, b in paires if meilleur(b, a))
     n_utiles = victoires_a + victoires_b
     k = seuil_signe(n_utiles) if n_utiles else None
     return {
-        "paires": len(paires), "paires_utiles": n_utiles,
-        "victoires_B": victoires_b, "victoires_A": victoires_a, "egalites": len(paires) - n_utiles,
-        "seuil_k": k,
-        "p_amelioration": p_unilaterale(n_utiles, victoires_b) if n_utiles else None,
+        "pairs": len(paires), "useful_pairs": n_utiles,
+        "b_wins": victoires_b, "a_wins": victoires_a, "ties": len(paires) - n_utiles,
+        "threshold_k": k,
+        "p_improvement": p_unilaterale(n_utiles, victoires_b) if n_utiles else None,
         "p_degradation": p_unilaterale(n_utiles, victoires_a) if n_utiles else None,
-        "au_dela_du_bruit": k is not None and victoires_b >= k,
-        "degradation_au_dela_du_bruit": k is not None and victoires_a >= k,
+        "beyond_noise": k is not None and victoires_b >= k,
+        "degradation_beyond_noise": k is not None and victoires_a >= k,
     }
 
 
 def resume(valeurs):
     valeurs = [v for v in valeurs if v is not None]
     if not valeurs:
-        return {"mediane": None, "min": None, "max": None, "valeurs": []}
-    return {"mediane": statistics.median(valeurs), "min": min(valeurs), "max": max(valeurs), "valeurs": valeurs}
+        return {"median": None, "min": None, "max": None, "values": []}
+    return {"median": statistics.median(valeurs), "min": min(valeurs), "max": max(valeurs), "values": valeurs}
 
 
 def gain_relatif(a, b, sens):
     if a in (None, 0) or b is None:
         return None
-    return (b / a - 1.0) if sens == "plus_haut" else (1.0 - b / a)
+    return (b / a - 1.0) if sens == "higher" else (1.0 - b / a)
 
 
 def description_machine():
@@ -222,30 +222,30 @@ def description_machine():
         version = subprocess.run([compilateur, "--version"], capture_output=True, text=True).stdout.splitlines()[0]
     except (OSError, IndexError):
         version = compilateur
-    return {"processeur": modele, "architecture": platform.machine(), "coeurs": os.cpu_count(),
-            "systeme": platform.platform(), "compilateur": version}
+    return {"processor": modele, "architecture": platform.machine(), "cores": os.cpu_count(),
+            "system": platform.platform(), "compiler": version}
 
 
 def afficher_tableau(rapport):
     lignes = [f"{'metric':26s} {'median A':>12s} {'median B':>12s} {'gain':>8s}  {'B wins':>8s}  verdict"]
-    for nom, m in rapport["metriques"].items():
+    for nom, m in rapport["metrics"].items():
         a, b = m["A"], m["B"]
-        if a["mediane"] is None:
+        if a["median"] is None:
             continue
-        s = m["test_du_signe"]
+        s = m["sign_test"]
         gain = "-" if m["gain"] is None else f"{100 * m['gain']:+.2f}%"
-        if m["au_dela_du_bruit"]:
+        if m["beyond_noise"]:
             verdict = "improvement beyond noise"
-        elif m["degradation_au_dela_du_bruit"]:
+        elif m["degradation_beyond_noise"]:
             verdict = "DEGRADATION beyond noise"
         else:
             verdict = "within noise"
-        lignes.append(f"{nom:26s} {a['mediane']:12.3f} {b['mediane']:12.3f} {gain:>8s}  "
-                      f"{s['victoires_B']:>3d}/{s['paires_utiles']:<4d}  {verdict}"
-                      + (f" ({s['egalites']} ties set aside)" if s["egalites"] else ""))
+        lignes.append(f"{nom:26s} {a['median']:12.3f} {b['median']:12.3f} {gain:>8s}  "
+                      f"{s['b_wins']:>3d}/{s['useful_pairs']:<4d}  {verdict}"
+                      + (f" ({s['ties']} ties set aside)" if s["ties"] else ""))
     for nom, m in (rapport.get("instructions") or {}).items():
         gain = "-" if m["gain"] is None else f"{100 * m['gain']:+.3f}%"
-        if not m["au_dela_du_bruit"]:
+        if not m["beyond_noise"]:
             verdict = "within noise"
         else:
             verdict = "fewer instructions" if m["gain"] > 0 else "MORE instructions"
@@ -254,7 +254,7 @@ def afficher_tableau(rapport):
 
 
 def main():
-    analyseur = argparse.ArgumentParser(description="Bee's interleaved A/B bench for miniz (see the module's help).")
+    analyseur = argparse.ArgumentParser(description="Bee's interleaved A/B bench for libyaml (see the module's help).")
     analyseur.add_argument("--base", required=True, help="revision A (reference), e.g. upstream/master or a commit")
     analyseur.add_argument("--candidate", required=True, help="revision B (candidate), e.g. HEAD; « :travail » for the working copy")
     analyseur.add_argument("--repetitions", type=int, default=10, help="runs of each binary (default 10)")
@@ -262,7 +262,7 @@ def main():
                            help="uncounted runs of A then B before measuring (default 1: warm caches and frequency)")
     analyseur.add_argument("--instructions", action="store_true", help="also counts instructions with cachegrind")
     analyseur.add_argument("--json", help="also writes the JSON report to this file")
-    analyseur.add_argument("--depot", default=os.path.dirname(OUTILLAGE), help="git repository of miniz (default: this script's)")
+    analyseur.add_argument("--depot", default=os.path.dirname(OUTILLAGE), help="git repository of libyaml (default: this script's)")
     analyseur.add_argument("--corpus", help="corpus folder (default: bee/corpus/donnees, regenerated and checked)")
     analyseur.add_argument("--passes", help="passed to the bench (--passes K): number of passes per run")
     analyseur.add_argument("--cpu", type=int, help="pins the runs to this core (sched_setaffinity)")
@@ -305,19 +305,19 @@ def main():
             print(f"ab: repetition {i + 1}/{args.repetitions} done", file=sys.stderr)
 
         rapport = {
-            "base": base, "candidat": candidat, "repetitions": args.repetitions, "chauffe": args.chauffe,
-            "ordre": "A, B, A, B…",
+            "base": base, "candidate": candidat, "repetitions": args.repetitions, "warmup": args.chauffe,
+            "order": "A, B, A, B…",
             "machine": description_machine(),
-            "methode": {
-                "valeur_retenue": "médiane des répétitions",
-                "gain": "médiane(B)/médiane(A) - 1 (plus_haut) ; 1 - médiane(B)/médiane(A) (plus_bas) ; positif = mieux",
-                "au_dela_du_bruit": (f"test du signe sur les paires entrelacées (A_i, B_i) : B gagne au moins k paires, "
-                                     f"k = plus petit entier tel que P(X >= k | N, 1/2) <= {SEUIL_TEST_DU_SIGNE} ; "
-                                     f"ici N = {args.repetitions}, k = {seuil_signe(args.repetitions)}"),
-                "degradation_au_dela_du_bruit": "même test, A gagne au moins k paires",
-                "minmax_disjoints": "information seulement : intervalles [min, max] de A et de B disjoints",
+            "method": {
+                "retained_value": "median of the repetitions",
+                "gain": "median(B)/median(A) - 1 (higher); 1 - median(B)/median(A) (lower); positive = better",
+                "beyond_noise": (f"sign test on the interleaved pairs (A_i, B_i): B wins at least k pairs, "
+                                 f"k = the smallest integer such that P(X >= k | N, 1/2) <= {SEUIL_TEST_DU_SIGNE}; "
+                                 f"here N = {args.repetitions}, k = {seuil_signe(args.repetitions)}"),
+                "degradation_beyond_noise": "the same test, A wins at least k pairs",
+                "minmax_disjoint": "information only: the [min, max] intervals of A and B are disjoint",
             },
-            "metriques": {}, "mesures": {"A": {}, "B": {}},
+            "metrics": {}, "measurements": {"A": {}, "B": {}},
         }
         if seuil_signe(args.repetitions) is None:
             print(f"ab: warning, with {args.repetitions} repetitions the sign test can never conclude "
@@ -326,37 +326,37 @@ def main():
             valeurs_a = [m.get(nom) for m in mesures["A"]]
             valeurs_b = [m.get(nom) for m in mesures["B"]]
             a, b = resume(valeurs_a), resume(valeurs_b)
-            disjoints = (a["mediane"] is not None and b["mediane"] is not None and (a["max"] < b["min"] or b["max"] < a["min"]))
+            disjoints = (a["median"] is not None and b["median"] is not None and (a["max"] < b["min"] or b["max"] < a["min"]))
             signe = test_du_signe(valeurs_a, valeurs_b, sens)
-            rapport["metriques"][nom] = {
-                "sens": sens, "unite": unite, "A": a, "B": b,
-                "gain": gain_relatif(a["mediane"], b["mediane"], sens),
-                "au_dela_du_bruit": signe["au_dela_du_bruit"],
-                "degradation_au_dela_du_bruit": signe["degradation_au_dela_du_bruit"],
-                "test_du_signe": signe,
-                "minmax_disjoints": disjoints,
+            rapport["metrics"][nom] = {
+                "direction": sens, "unit": unite, "A": a, "B": b,
+                "gain": gain_relatif(a["median"], b["median"], sens),
+                "beyond_noise": signe["beyond_noise"],
+                "degradation_beyond_noise": signe["degradation_beyond_noise"],
+                "sign_test": signe,
+                "minmax_disjoint": disjoints,
             }
-            rapport["mesures"]["A"][nom] = a["mediane"]
-            rapport["mesures"]["B"][nom] = b["mediane"]
+            rapport["measurements"]["A"][nom] = a["median"]
+            rapport["measurements"]["B"][nom] = b["median"]
 
         if args.instructions:
             rapport["instructions"] = {}
             encadre = True
-            for scenario in SCENARIOS_INSTRUCTIONS:
+            for scenario, identifiant in SCENARIOS_INSTRUCTIONS.items():
                 comptes = {}
                 for etiquette in ("A", "B"):
                     comptes[etiquette], requetes = compter_instructions(binaires[etiquette], corpus, scenario, dossier_travail,
                                                                        etiquette, args.prefixe_instructions)
                     encadre = encadre and requetes
-                gain = gain_relatif(comptes["A"], comptes["B"], "plus_bas")
-                rapport["instructions"]["instructions_" + scenario] = {
-                    "sens": "plus_bas", "unite": "instructions", "A": comptes["A"], "B": comptes["B"], "gain": gain,
-                    "au_dela_du_bruit": gain is not None and abs(gain) > args.seuil_instructions}
-            rapport["methode"]["instructions"] = (
-                f"valgrind --tool=cachegrind, une exécution par scénario, {args.prefixe_instructions} premiers octets "
-                f"de chaque fichier ; {'passes mesurées seulement' if encadre else 'programme entier (en-tête valgrind absent)'} ; "
-                f"au-delà du bruit si l'écart dépasse {100 * args.seuil_instructions:.2f} %")
-        rapport["duree_s"] = round(time.time() - debut, 1)
+                gain = gain_relatif(comptes["A"], comptes["B"], "lower")
+                rapport["instructions"][identifiant] = {
+                    "direction": "lower", "unit": "instructions", "A": comptes["A"], "B": comptes["B"], "gain": gain,
+                    "beyond_noise": gain is not None and abs(gain) > args.seuil_instructions}
+            rapport["method"]["instructions"] = (
+                f"valgrind --tool=cachegrind, one run per scenario, the first {args.prefixe_instructions} bytes "
+                f"of each file; {'timed passes only' if encadre else 'whole program (valgrind header missing)'}; "
+                f"beyond noise if the difference exceeds {100 * args.seuil_instructions:.2f} %")
+        rapport["duration_s"] = round(time.time() - debut, 1)
     finally:
         for wt in worktrees:
             if wt:

@@ -56,7 +56,7 @@ static void sauver_entree_fautive(int signal_recu)
     {
         fwrite(entree_courante, 1, taille_courante, f);
         fclose(f);
-        fprintf(stderr, "pilote : entrée fautive (%zu octets) écrite dans %s\n", taille_courante, chemin);
+        fprintf(stderr, "driver: faulty input (%zu bytes) written to %s\n", taille_courante, chemin);
     }
     signal(signal_recu, SIG_DFL);
     raise(signal_recu);
@@ -198,7 +198,7 @@ int main(int argc, char **argv)
         taille_courante = graines[i].taille;
         LLVMFuzzerTestOneInput(graines[i].octets, graines[i].taille);
     }
-    fprintf(stderr, "pilote : %zu graines rejouées, mutations aléatoires pendant %ld s\n", nb_graines, duree);
+    fprintf(stderr, "driver: %zu seeds replayed, random mutations for %ld s\n", nb_graines, duree);
 
     debut = time(NULL);
     fin = debut + duree;
@@ -228,7 +228,7 @@ int main(int argc, char **argv)
             iterations++;
         }
     }
-    fprintf(stderr, "pilote : terminé, %ld entrées en %ld s, aucun écart.\n", iterations, (long)(time(NULL) - debut));
+    fprintf(stderr, "driver: done, %ld inputs in %ld s, no discrepancy.\n", iterations, (long)(time(NULL) - debut));
     for (i = 0; i < nb_graines; i++)
         free(graines[i].octets);
     free(graines);

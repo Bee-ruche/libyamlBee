@@ -17,11 +17,11 @@
 # conteneur, suffisante pour compiler et mesurer le code des projets Bee. Si elle échoue, utilisez
 # Docker (bee/README.md).
 set -euo pipefail
-[ $# -ge 1 ] || { echo "usage : $0 <commande> [arguments…]" >&2; exit 2; }
-command -v unshare >/dev/null || { echo "unshare introuvable : utilisez Docker (bee/README.md)." >&2; exit 1; }
+[ $# -ge 1 ] || { echo "usage: $0 <command> [arguments…]" >&2; exit 2; }
+command -v unshare >/dev/null || { echo "unshare not found: use Docker (bee/README.md)." >&2; exit 1; }
 depot="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 if ! unshare -rmn --pid --fork --mount-proc true 2>/dev/null; then
-  echo "Les espaces de noms utilisateur (ou PID) sont refusés sur cette machine : utilisez Docker (bee/README.md)." >&2
+  echo "User (or PID) namespaces are refused on this machine: use Docker (bee/README.md)." >&2
   exit 1
 fi
 exec unshare -rmn --pid --fork --mount-proc --kill-child --propagation private -- bash -c '

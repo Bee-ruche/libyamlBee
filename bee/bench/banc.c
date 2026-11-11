@@ -205,7 +205,7 @@ int main(int argc, char *argv[])
 #endif
             return 0;
         }
-        else { fprintf(stderr, "option inconnue : %s\n", argv[i]); return 2; }
+        else { fprintf(stderr, "unknown option: %s\n", argv[i]); return 2; }
     }
     if (passes < 1) passes = 1;
 

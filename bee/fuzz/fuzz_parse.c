@@ -211,8 +211,8 @@ static void signaler_ecart(int sa, int sb, const bee_tampon *a, const bee_tampon
     while (i < n && a->octets[i] == b->octets[i])
         i++;
     /* Pas de contenu de l'entrée ici : seulement des positions (lancer.sh masque tout en mode discret). */
-    fprintf(stderr, "fuzz_parse : ÉCART base/candidat : statut %d contre %d, flux de %zu contre %zu octets, "
-                    "premier octet différent à %zu.\n", sb, sa, b->taille, a->taille, i);
+    fprintf(stderr, "fuzz_parse: DISCREPANCY base/candidate: status %d versus %d, stream of %zu versus %zu bytes, "
+                    "first differing byte at %zu.\n", sb, sa, b->taille, a->taille, i);
 }
 #endif
 

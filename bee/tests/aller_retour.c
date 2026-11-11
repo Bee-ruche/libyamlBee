@@ -141,7 +141,7 @@ static void decrire(const yaml_event_t *e)
     int implicite = 0;
     size_t i;
     switch (e->type) {
-    case YAML_STREAM_START_EVENT: fprintf(stderr, "+STR (encodage %d)", e->data.stream_start.encoding); break;
+    case YAML_STREAM_START_EVENT: fprintf(stderr, "+STR (encoding %d)", e->data.stream_start.encoding); break;
     case YAML_STREAM_END_EVENT: fprintf(stderr, "-STR"); break;
     case YAML_DOCUMENT_START_EVENT:
         fprintf(stderr, "+DOC%s", e->data.document_start.implicit ? "" : " ---");
@@ -182,11 +182,11 @@ static void decrire(const yaml_event_t *e)
             else if (c < 0x20 || c == 0x7f) fprintf(stderr, "\\x%02x", c);
             else fputc(c, stderr);
         }
-        if (e->data.scalar.length > 60) fprintf(stderr, "… (%lu octets)", (unsigned long)e->data.scalar.length);
+        if (e->data.scalar.length > 60) fprintf(stderr, "… (%lu bytes)", (unsigned long)e->data.scalar.length);
         fprintf(stderr, " [plain_implicit=%d quoted_implicit=%d]", e->data.scalar.plain_implicit,
                 e->data.scalar.quoted_implicit);
         break;
-    default: fprintf(stderr, "(événement de type %d)", (int)e->type); break;
+    default: fprintf(stderr, "(event of type %d)", (int)e->type); break;
     }
     fputc('\n', stderr);
 }
@@ -224,10 +224,10 @@ static int style_tolere(yaml_scalar_style_t avant, yaml_scalar_style_t apres)
 static int comparer(const yaml_event_t *a, const yaml_event_t *b, bilan *n, const char **motif)
 {
     long k, nombre;
-    if (a->type != b->type) ECART("type d'événement différent");
+    if (a->type != b->type) ECART("different event type");
     switch (a->type) {
     case YAML_STREAM_START_EVENT:
-        if (a->data.stream_start.encoding != b->data.stream_start.encoding) ECART("encodage différent");
+        if (a->data.stream_start.encoding != b->data.stream_start.encoding) ECART("different encoding");
         return 1;
     case YAML_DOCUMENT_START_EVENT: {
         const yaml_version_directive_t *va = a->data.document_start.version_directive;
@@ -235,57 +235,57 @@ static int comparer(const yaml_event_t *a, const yaml_event_t *b, bilan *n, cons
         const yaml_tag_directive_t *da = a->data.document_start.tag_directives.start;
         const yaml_tag_directive_t *db = b->data.document_start.tag_directives.start;
         if (!va != !vb || (va && (va->major != vb->major || va->minor != vb->minor)))
-            ECART("directive %YAML différente");
+            ECART("different %YAML directive");
         nombre = (long)(a->data.document_start.tag_directives.end - da);
         if (nombre != (long)(b->data.document_start.tag_directives.end - db))
-            ECART("nombre de directives %TAG différent");
+            ECART("different number of %TAG directives");
         for (k = 0; k < nombre; k++)
             if (!memes(da[k].handle, db[k].handle) || !memes(da[k].prefix, db[k].prefix))
-                ECART("directive %TAG différente");
+                ECART("different %TAG directive");
         if (a->data.document_start.implicit != b->data.document_start.implicit)
-            ECART("indicateur implicite du début de document différent");
+            ECART("different implicit flag of the document start");
         return 1;
     }
     case YAML_DOCUMENT_END_EVENT:
         if (a->data.document_end.implicit != b->data.document_end.implicit) {
-            if (!a->data.document_end.implicit) ECART("fin de document devenue implicite");
+            if (!a->data.document_end.implicit) ECART("document end became implicit");
             n->fin_doc++; /* N4 */
         }
         return 1;
     case YAML_ALIAS_EVENT:
-        if (!memes(a->data.alias.anchor, b->data.alias.anchor)) ECART("alias différent");
+        if (!memes(a->data.alias.anchor, b->data.alias.anchor)) ECART("different alias");
         return 1;
     case YAML_SCALAR_EVENT:
-        if (!memes(a->data.scalar.anchor, b->data.scalar.anchor)) ECART("ancre différente");
+        if (!memes(a->data.scalar.anchor, b->data.scalar.anchor)) ECART("different anchor");
         if (a->data.scalar.length != b->data.scalar.length
                 || memcmp(a->data.scalar.value, b->data.scalar.value, a->data.scalar.length) != 0)
-            ECART("valeur du scalaire différente");
+            ECART("different scalar value");
         if (a->data.scalar.plain_implicit != b->data.scalar.plain_implicit
                 || a->data.scalar.quoted_implicit != b->data.scalar.quoted_implicit)
-            ECART("indicateurs plain_implicit / quoted_implicit différents");
+            ECART("different plain_implicit / quoted_implicit flags");
         if (!memes(a->data.scalar.tag, b->data.scalar.tag)) {
             if (!(a->data.scalar.plain_implicit && absente_ou_bang(a->data.scalar.tag)
                         && absente_ou_bang(b->data.scalar.tag)))
-                ECART("étiquette du scalaire différente");
+                ECART("different scalar tag");
             n->etiquette++; /* N3 */
         }
         if (a->data.scalar.style != b->data.scalar.style) {
             if (!style_tolere(a->data.scalar.style, b->data.scalar.style))
-                ECART("style du scalaire changé hors des cas tolérés (N2)");
+                ECART("scalar style changed outside the tolerated cases (N2)");
             n->style++; /* N2 */
         }
         return 1;
     case YAML_SEQUENCE_START_EVENT:
-        if (!memes(a->data.sequence_start.anchor, b->data.sequence_start.anchor)) ECART("ancre différente");
-        if (!memes(a->data.sequence_start.tag, b->data.sequence_start.tag)) ECART("étiquette différente");
-        if (a->data.sequence_start.implicit != b->data.sequence_start.implicit) ECART("indicateur implicite différent");
-        if (a->data.sequence_start.style != b->data.sequence_start.style) ECART("style de séquence différent");
+        if (!memes(a->data.sequence_start.anchor, b->data.sequence_start.anchor)) ECART("different anchor");
+        if (!memes(a->data.sequence_start.tag, b->data.sequence_start.tag)) ECART("different tag");
+        if (a->data.sequence_start.implicit != b->data.sequence_start.implicit) ECART("different implicit flag");
+        if (a->data.sequence_start.style != b->data.sequence_start.style) ECART("different sequence style");
         return 1;
     case YAML_MAPPING_START_EVENT:
-        if (!memes(a->data.mapping_start.anchor, b->data.mapping_start.anchor)) ECART("ancre différente");
-        if (!memes(a->data.mapping_start.tag, b->data.mapping_start.tag)) ECART("étiquette différente");
-        if (a->data.mapping_start.implicit != b->data.mapping_start.implicit) ECART("indicateur implicite différent");
-        if (a->data.mapping_start.style != b->data.mapping_start.style) ECART("style de mapping différent");
+        if (!memes(a->data.mapping_start.anchor, b->data.mapping_start.anchor)) ECART("different anchor");
+        if (!memes(a->data.mapping_start.tag, b->data.mapping_start.tag)) ECART("different tag");
+        if (a->data.mapping_start.implicit != b->data.mapping_start.implicit) ECART("different implicit flag");
+        if (a->data.mapping_start.style != b->data.mapping_start.style) ECART("different mapping style");
         return 1;
     default:
         return 1;
@@ -310,7 +310,7 @@ static int analyser(const tampon *entree, flux *a, const char *nom)
         if (!yaml_parser_parse(&p, &e)) {
             int memoire = p.error == YAML_MEMORY_ERROR;
             if (!memoire)
-                fprintf(stderr, "%s : entrée invalide, rejetée par l'analyseur : %s (ligne %lu, colonne %lu)\n",
+                fprintf(stderr, "%s: invalid input, rejected by the parser: %s (line %lu, column %lu)\n",
                         nom, p.problem ? p.problem : "?", (unsigned long)p.problem_mark.line + 1,
                         (unsigned long)p.problem_mark.column + 1);
             yaml_parser_delete(&p);
@@ -333,15 +333,15 @@ static int emettre(const flux *a, tampon *t, const char *nom)
     for (i = 0; i < a->nombre; i++) {
         yaml_event_t copie;
         if (!copier(&copie, &a->ev[i])) {
-            fprintf(stderr, "%s : ÉCHEC, copie de l'événement n° %lu impossible\n", nom, (unsigned long)i + 1);
+            fprintf(stderr, "%s: FAILED, cannot copy event no. %lu\n", nom, (unsigned long)i + 1);
             yaml_emitter_delete(&em);
             return 0;
         }
         /* L'émetteur prend possession de la copie et la libère, même en cas d'échec. */
         if (!yaml_emitter_emit(&em, &copie)) {
-            fprintf(stderr, "%s : ÉCHEC, l'émetteur refuse l'événement n° %lu : %s\n", nom,
+            fprintf(stderr, "%s: FAILED, the emitter refuses event no. %lu: %s\n", nom,
                     (unsigned long)i + 1, em.problem ? em.problem : "?");
-            fprintf(stderr, "  analysé : ");
+            fprintf(stderr, "  parsed: ");
             decrire(&a->ev[i]);
             yaml_emitter_delete(&em);
             return 0;
@@ -361,18 +361,18 @@ static int relire(const tampon *t, const flux *a, bilan *n, const char *nom)
     yaml_parser_set_input_string(&p, t->taille ? t->octets : VIDE, t->taille);
     while (!fini) {
         yaml_event_t e;
-        const char *motif = "la relecture produit plus d'événements que l'analyse";
+        const char *motif = "the reread yields more events than the parse";
         if (!yaml_parser_parse(&p, &e)) {
-            fprintf(stderr, "%s : ÉCHEC, la sortie émise ne s'analyse pas (événement n° %lu) : %s (ligne %lu, colonne %lu)\n",
+            fprintf(stderr, "%s: FAILED, the emitted output does not parse (event no. %lu): %s (line %lu, column %lu)\n",
                     nom, (unsigned long)i + 1, p.problem ? p.problem : "?",
                     (unsigned long)p.problem_mark.line + 1, (unsigned long)p.problem_mark.column + 1);
             yaml_parser_delete(&p);
             return 0;
         }
         if (i >= a->nombre || !comparer(&a->ev[i], &e, n, &motif)) {
-            fprintf(stderr, "%s : ÉCHEC à l'événement n° %lu : %s\n", nom, (unsigned long)i + 1, motif);
-            if (i < a->nombre) { fprintf(stderr, "  analysé : "); decrire(&a->ev[i]); }
-            fprintf(stderr, "  relu    : ");
+            fprintf(stderr, "%s: FAILED at event no. %lu: %s\n", nom, (unsigned long)i + 1, motif);
+            if (i < a->nombre) { fprintf(stderr, "  parsed: "); decrire(&a->ev[i]); }
+            fprintf(stderr, "  reread: ");
             decrire(&e);
             yaml_event_delete(&e);
             yaml_parser_delete(&p);
@@ -384,7 +384,7 @@ static int relire(const tampon *t, const flux *a, bilan *n, const char *nom)
     }
     yaml_parser_delete(&p);
     if (i != a->nombre) {
-        fprintf(stderr, "%s : ÉCHEC, la relecture donne %lu événements, l'analyse %lu\n", nom,
+        fprintf(stderr, "%s: FAILED, the reread gives %lu events, the parse %lu\n", nom,
                 (unsigned long)i, (unsigned long)a->nombre);
         return 0;
     }
@@ -433,11 +433,11 @@ static int traiter(const char *nom, const char *chemin, const unsigned char *tex
     size_t i;
 
     if (chemin ? !lire_fichier(chemin, &entree) : !ajouter(&entree, texte, taille)) {
-        fprintf(stderr, "aller_retour : lecture impossible : %s\n", chemin ? chemin : nom);
+        fprintf(stderr, "aller_retour: cannot read: %s\n", chemin ? chemin : nom);
         statut = ERREUR;
     } else if ((r = analyser(&entree, &a, nom)) <= 0) {
         statut = r < 0 ? ERREUR : REJETE;
-        if (r < 0) fprintf(stderr, "aller_retour : %s : mémoire insuffisante\n", nom);
+        if (r < 0) fprintf(stderr, "aller_retour: %s: out of memory\n", nom);
         sortie.taille = 0; /* rien n'est émis pour une entrée invalide */
     } else if (!emettre(&a, &sortie, nom) || !relire(&sortie, &a, &local, nom)) {
         statut = ECHEC;
@@ -475,7 +475,7 @@ int main(int argc, char *argv[])
     if (argc > 1 && strcmp(argv[1], "--emis") == 0) montrer = 1, premier = 2;
     else if (argc > 1 && strcmp(argv[1], "--internes") == 0) internes = 1, premier = 2;
     if ((!internes && premier >= argc) || (montrer && argc != 3)) {
-        fprintf(stderr, "usage : %s [--internes] <fichier>...  |  %s --internes  |  %s --emis <fichier>\n",
+        fprintf(stderr, "usage: %s [--internes] <file>...  |  %s --internes  |  %s --emis <file>\n",
                 argv[0], argv[0], argv[0]);
         return 2;
     }
@@ -490,11 +490,11 @@ int main(int argc, char *argv[])
     }
     fflush(stdout);
 
-    fprintf(stderr, "Aller-retour : %lu documents : %lu ok, %lu rejetés (entrée invalide), %lu en échec",
+    fprintf(stderr, "Round trip: %lu documents: %lu ok, %lu rejected (invalid input), %lu failed",
             nombre, compte[OK], compte[REJETE], compte[ECHEC]);
-    if (compte[ERREUR]) fprintf(stderr, ", %lu illisibles", compte[ERREUR]);
-    fprintf(stderr, ".\n  %lu événements comparés ; normalisations tolérées : %lu styles de scalaire (N2), "
-            "%lu étiquettes « ! » (N3), %lu fins de document rendues explicites (N4).\n",
+    if (compte[ERREUR]) fprintf(stderr, ", %lu unreadable", compte[ERREUR]);
+    fprintf(stderr, ".\n  %lu events compared; tolerated normalizations: %lu scalar styles (N2), "
+            "%lu « ! » tags (N3), %lu document ends made explicit (N4).\n",
             total.evenements, total.style, total.etiquette, total.fin_doc);
     if (compte[ERREUR]) return 2;
     return compte[ECHEC] ? 1 : 0;

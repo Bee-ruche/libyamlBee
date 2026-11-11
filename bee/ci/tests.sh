@@ -14,10 +14,10 @@ ICI="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BEE="$(dirname "$ICI")"
 pr="$(cd "$1" && pwd)"
 
-echo "== Outillage de la base, sources de la PR"
+echo "== The base's tooling, the PR's sources"
 "$BEE/tests/lancer.sh" --source "$pr"
 
 if [ -n "${BASE_SHA:-}" ] && [ -n "$(git -C "$pr" diff --name-only "${BASE_SHA}...${TETE_SHA:-HEAD}" -- bee/)" ]; then
-  echo "== La PR modifie bee/ : son propre outillage, sur ses propres sources"
+  echo "== The PR modifies bee/: its own tooling, on its own sources"
   BEE_CONSTR="$pr/bee/construction/tests-pr" "$pr/bee/tests/lancer.sh" --source "$pr"
 fi

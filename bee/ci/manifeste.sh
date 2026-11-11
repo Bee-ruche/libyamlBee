@@ -18,25 +18,25 @@ ICI="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 pr="$1"
 registre="$2"
 py="${3:-python3}"
-: "${BASE_SHA:?BASE_SHA manquant}" "${TETE_SHA:?TETE_SHA manquant}"
+: "${BASE_SHA:?BASE_SHA missing}" "${TETE_SHA:?TETE_SHA missing}"
 sortie="${BEE_SORTIE_TACHE:-tache.yaml}"
 infos="$(mktemp)"
 
 mapfile -t manifestes < <(git -C "$pr" diff --name-only --no-renames --diff-filter=AM "$BASE_SHA...$TETE_SHA" -- 'manifests/*' 'manifestes/*')
 if [ "${#manifestes[@]}" -gt 1 ]; then
-  echo "La PR ajoute ou modifie plusieurs manifestes (${manifestes[*]}) : une PR, une tâche." >&2
+  echo "The PR adds or modifies several manifests (${manifestes[*]}): one PR, one task." >&2
   exit 1
 fi
 manifeste="${manifestes[0]:-CONTRIBUTION.yaml}"
 if ! printf '%s' "$manifeste" | grep -Eq '^(manifests|manifestes)/libyaml-[0-9]{4}\.yaml$|^CONTRIBUTION\.yaml$'; then
-  echo "Nom de manifeste invalide : manifests/libyaml-NNNN.yaml (ou manifestes/libyaml-NNNN.yaml) attendu." >&2
+  echo "Invalid manifest name: manifests/libyaml-NNNN.yaml (or manifestes/libyaml-NNNN.yaml) expected." >&2
   exit 1
 fi
 if [ -L "$pr/$manifeste" ] || { [ -e "$pr/$manifeste" ] && [ ! -f "$pr/$manifeste" ]; }; then
-  echo "Le manifeste $manifeste doit être un fichier ordinaire (ni lien symbolique, ni dossier)." >&2
+  echo "The manifest $manifeste must be a regular file (neither a symbolic link nor a folder)." >&2
   exit 1
 fi
-echo "Manifeste : $manifeste"
+echo "Manifest: $manifeste"
 
 statut=0
 "$py" "$ICI/tache.py" --manifeste "$pr/$manifeste" --registre "$registre" --sortie "$sortie" > "$infos" || statut=$?

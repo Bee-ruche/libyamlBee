@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Lance « bee verifier-fork » (« check-fork » en anglais), l'outil du registre Bee, dans les noms que son --help annonce.
+"""Runs the Bee registry's tool « bee check-fork » (« verifier-fork » in French), with the names its --help announces.
 
 Le registre passe ses noms en anglais en une bascule (docs/english-names.md du registre) : outils/ → tools/,
 verifier-fork → check-fork, --tache → --task, --tete → --head, --depot → --repo, --auteur → --author, --registre →
@@ -27,7 +27,7 @@ GLOBALE = {"--registry": "BEE_REGISTRY", "--registre": "BEE_REGISTRE"}
 
 
 def echouer(message):
-    print(f"::error::verifier_fork.py : {message}", file=sys.stderr)
+    print(f"::error::verifier_fork.py: {message}", file=sys.stderr)
     sys.exit(1)
 
 
@@ -40,7 +40,7 @@ def options_annoncees(sortie):
 def un_seul(annoncees, noms, quoi):
     presents = sorted(set(noms) & annoncees)
     if len(presents) != 1:
-        raise LookupError(f"{quoi} : {' ou '.join(sorted(set(noms)))} attendu dans l'usage, trouvé {presents or 'aucun'}")
+        raise LookupError(f"{quoi}: {' or '.join(sorted(set(noms)))} expected in the usage line, found {presents or 'none'}")
     return presents[0]
 
 
@@ -53,7 +53,7 @@ def main():
 
     outils = [c for c in ("tools/bee.py", "outils/bee.py") if os.path.isfile(os.path.join(args.registre, c))]
     if len(outils) != 1:
-        echouer(f"il faut exactement un outil parmi tools/bee.py et outils/bee.py dans le registre (trouvés : {outils or 'aucun'})")
+        echouer(f"the registry must have exactly one tool among tools/bee.py and outils/bee.py (found: {outils or 'none'})")
     outil = os.path.join(args.registre, outils[0])
     env = {k: v for k, v in os.environ.items() if k not in GLOBALE.values()}
     env["PYTHON_COLORS"] = "0"  # une aide sans couleurs (argparse de Python 3.14), lue telle quelle
@@ -64,7 +64,7 @@ def main():
 
     sortie, erreur = aide()
     try:
-        globale = un_seul(options_annoncees(sortie), GLOBALE, f"option globale de {outils[0]} --help ({erreur or 'sans erreur'})")
+        globale = un_seul(options_annoncees(sortie), GLOBALE, f"global option of {outils[0]} --help ({erreur or 'no error'})")
     except LookupError as e:
         echouer(str(e))
     env[GLOBALE[globale]] = args.registre
@@ -74,19 +74,19 @@ def main():
         sortie, _ = aide(globale, args.registre, commande)
         try:
             if not re.match(rf"usage: \S+ {re.escape(commande)}(\s|$)", sortie):
-                raise LookupError(f"{commande} --help n'annonce pas cette commande")
+                raise LookupError(f"{commande} --help does not announce this command")
             annoncees = options_annoncees(sortie)
             retenues[commande] = {nom: un_seul(annoncees, OPTIONS[nom], f"{commande} {OPTIONS[nom][1]}") for nom in voulues}
         except LookupError as e:
             refus.append(str(e))
     if len(retenues) != 1:
-        echouer(f"il faut exactement une commande parmi {', '.join(COMMANDES)} dans l'aide de {outils[0]} "
-                f"(retenues : {sorted(retenues) or 'aucune'} ; écartées : {' ; '.join(refus) or 'aucune'})")
+        echouer(f"exactly one command among {', '.join(COMMANDES)} is needed in the help of {outils[0]} "
+                f"(kept: {sorted(retenues) or 'none'}; set aside: {'; '.join(refus) or 'none'})")
     (commande, noms), = retenues.items()
     appel = [sys.executable, outil, globale, args.registre, commande]
     for nom in voulues:
         appel += [noms[nom], getattr(args, nom)]
-    print(f"Outil du registre : {outils[0]} {globale} … {commande} ({', '.join(noms[n] for n in voulues)})", flush=True)
+    print(f"Registry tool: {outils[0]} {globale} … {commande} ({', '.join(noms[n] for n in voulues)})", flush=True)
     return subprocess.run(appel, env=env).returncode
 
 

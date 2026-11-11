@@ -40,7 +40,7 @@ static int parcourir(const char *racine, const char *relatif, liste_noms *l)
     d = opendir(chemin);
     if (!d)
     {
-        fprintf(stderr, "corpus : impossible d'ouvrir le dossier %s\n", chemin);
+        fprintf(stderr, "corpus: cannot open the folder %s\n", chemin);
         return -1;
     }
     while ((e = readdir(d)) != NULL)
@@ -88,7 +88,7 @@ static int construire(const char *dossier, bee_corpus *corpus, int lire)
         goto echec;
     if (l.nombre == 0)
     {
-        fprintf(stderr, "corpus : aucun fichier dans %s (lancez python3 bee/corpus/generer.py)\n", dossier);
+        fprintf(stderr, "corpus: no file in %s (run python3 bee/corpus/generer.py)\n", dossier);
         goto echec;
     }
     qsort(l.noms, l.nombre, sizeof(char *), comparer_noms);
@@ -110,7 +110,7 @@ static int construire(const char *dossier, bee_corpus *corpus, int lire)
         fp = fopen(chemin, "rb");
         if (!fp || fseek(fp, 0, SEEK_END) != 0 || (taille = ftell(fp)) < 0 || fseek(fp, 0, SEEK_SET) != 0)
         {
-            fprintf(stderr, "corpus : lecture impossible de %s\n", chemin);
+            fprintf(stderr, "corpus: cannot read %s\n", chemin);
             if (fp)
                 fclose(fp);
             goto echec;
@@ -119,7 +119,7 @@ static int construire(const char *dossier, bee_corpus *corpus, int lire)
         f->donnees = (unsigned char *)malloc(f->taille ? f->taille : 1);
         if (!f->donnees || (f->taille && fread(f->donnees, 1, f->taille, fp) != f->taille))
         {
-            fprintf(stderr, "corpus : lecture incomplète de %s\n", chemin);
+            fprintf(stderr, "corpus: incomplete read of %s\n", chemin);
             fclose(fp);
             goto echec;
         }

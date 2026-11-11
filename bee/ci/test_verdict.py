@@ -355,7 +355,7 @@ class JobManifeste(unittest.TestCase):
         for texte in (MANIFESTE_EN.replace("summary: r", "resume: r"), MANIFESTE_FR.replace("avant:", "before:")):
             with self.subTest(manifeste=texte):
                 self.setUp()
-                self.refus("mêle les deux vocabulaires", [("manifests/libyaml-0050.yaml", texte)])
+                self.refus("mixes both vocabularies", [("manifests/libyaml-0050.yaml", texte)])
 
     def test_tache_type_ou_metrique_illisible_echoue(self):
         """Le job échoue, sans appeler l'outil ni écrire la copie de la tâche : jamais un défaut."""
@@ -371,22 +371,22 @@ class JobManifeste(unittest.TestCase):
                                ("taches", TACHE_FR.replace("metrique: debit_emission", "metrique: null"))):
             with self.subTest(dossier=dossier, tache=texte):
                 self.setUp()
-                self.refus("tâche libyaml-0050", [("manifestes/libyaml-0050.yaml", MANIFESTE_FR)], taches=((dossier, texte),))
-                self.assertIn("illisible", self.sortie_job)
+                self.refus("task libyaml-0050", [("manifestes/libyaml-0050.yaml", MANIFESTE_FR)], taches=((dossier, texte),))
+                self.assertIn("unreadable", self.sortie_job)
 
     def test_metrique_connue_du_registre_et_mesuree_par_le_banc(self):
         """La métrique doit être dans le descripteur du registre ET dans celles que le banc mesure : une métrique que
         le registre ne liste pas est refusée ; une qu'il liste mais que le banc ne mesure pas aussi, dès cette étape
         (sans quoi elle ne serait refusée qu'au verdict, sous un autre nom)."""
         seule = PROJET_EN.split("metrics:")[0] + "metrics:\n  - {id: debit_analyse, unit: MB/s, direction: higher}\n"
-        self.refus("inconnue", [("manifestes/libyaml-0050.yaml", MANIFESTE_FR)], projets=(("projects", seule),))
+        self.refus("unknown", [("manifestes/libyaml-0050.yaml", MANIFESTE_FR)], projets=(("projects", seule),))
         for projets, tache in ((("projets", PROJET_FR.replace("id: debit_emission", "id: debit_nouveau")),
                                 TACHE_FR.replace("debit_emission", "debit_nouveau")),
                                (("projects", PROJET_EN.replace("direction: lower}\n", "direction: lower}\n  - {id: latence, unit: ms, direction: lower}\n")),
                                 TACHE_EN.replace("debit_emission", "latence"))):
             with self.subTest(projets=projets[0]):
                 self.setUp()
-                self.refus("ne mesure pas", [("manifestes/libyaml-0050.yaml", MANIFESTE_FR)], projets=(projets,),
+                self.refus("does not measure it", [("manifestes/libyaml-0050.yaml", MANIFESTE_FR)], projets=(projets,),
                            taches=(("taches", tache),))
         self.setUp()
         code, sortie = self.lancer([("manifestes/libyaml-0050.yaml", MANIFESTE_FR)],
@@ -400,7 +400,7 @@ class JobManifeste(unittest.TestCase):
                       b"tache: [libyaml-0050\n"):
             with self.subTest(texte=texte[-30:]):
                 self.setUp()
-                self.refus("manifeste illisible", [("manifestes/libyaml-0050.yaml", texte)])
+                self.refus("manifest unreadable", [("manifestes/libyaml-0050.yaml", texte)])
                 self.assertNotIn("Traceback", self.sortie_job)
 
     def test_manifeste_fichier_ordinaire(self):
@@ -416,29 +416,29 @@ class JobManifeste(unittest.TestCase):
                 liens = [(c, os.path.join(self.d, "dehors.yaml") if cible == "DEHORS" else cible) for c, cible in liens]
                 code, sortie = self.lancer(manifestes, liens=liens)
                 self.assertEqual((code, self.journal, self.copie, self.sorties), (1, [], None, {}), sortie)
-                self.assertIn("doit être un fichier ordinaire", sortie)
+                self.assertIn("must be a regular file", sortie)
 
     def test_descripteur_illisible_echoue(self):
-        for projets, attendu in (((("projets", PROJET_FR.replace("licence:", "license:")),), "mêle les deux vocabulaires"),
-                                 ((("projects", PROJET_EN.split("metrics:")[0]),), "absente"),
-                                 ((("projets", "- liste\n"),), "pas un objet"),
-                                 ((("projets", "nom: [illisible\n"),), "illisible"),
-                                 ((), "introuvable"),
-                                 ((("projets", PROJET_FR), ("projects", PROJET_EN)), "plusieurs fois")):
+        for projets, attendu in (((("projets", PROJET_FR.replace("licence:", "license:")),), "mixes both vocabularies"),
+                                 ((("projects", PROJET_EN.split("metrics:")[0]),), "missing"),
+                                 ((("projets", "- liste\n"),), "not contain a YAML object"),
+                                 ((("projets", "nom: [illisible\n"),), "unreadable"),
+                                 ((), "not found"),
+                                 ((("projets", PROJET_FR), ("projects", PROJET_EN)), "more than once")):
             with self.subTest(projets=[p for p, _ in projets], attendu=attendu):
                 self.setUp()
                 self.refus(attendu, [("manifestes/libyaml-0050.yaml", MANIFESTE_FR)], projets=projets)
 
     def test_tache_introuvable_ou_dans_les_deux_dispositions(self):
-        self.refus("introuvable", [("manifestes/libyaml-0050.yaml", MANIFESTE_FR)], taches=())
+        self.refus("not found", [("manifestes/libyaml-0050.yaml", MANIFESTE_FR)], taches=())
         self.setUp()
-        self.refus("plusieurs fois", [("manifestes/libyaml-0050.yaml", MANIFESTE_FR)],
+        self.refus("more than once", [("manifestes/libyaml-0050.yaml", MANIFESTE_FR)],
                    taches=(("taches", TACHE_FR), ("tasks", TACHE_EN)))
 
     def test_deux_manifestes_refuses(self):
         code, sortie = self.lancer([("manifests/libyaml-0050.yaml", MANIFESTE_EN), ("manifestes/libyaml-0050.yaml", MANIFESTE_FR)])
         self.assertEqual((code, self.journal), (1, []), sortie)
-        self.assertIn("plusieurs manifestes", sortie)
+        self.assertIn("several manifests", sortie)
 
     def test_nom_de_manifeste(self):
         for chemin in ("manifests/libyaml-50.yaml", "manifests/sous/libyaml-0050.yaml", "manifestes/miniz-0050.yaml"):
@@ -446,11 +446,11 @@ class JobManifeste(unittest.TestCase):
                 self.setUp()
                 code, sortie = self.lancer([(chemin, MANIFESTE_FR)])
                 self.assertEqual((code, self.journal), (1, []), sortie)
-                self.assertIn("Nom de manifeste invalide", sortie)
+                self.assertIn("Invalid manifest name", sortie)
         self.setUp()
         code, sortie = self.lancer([("manifests/libyaml-0051.yaml", MANIFESTE_EN)])  # désigne libyaml-0050
         self.assertEqual((code, self.journal), (1, []), sortie)
-        self.assertIn("doit s'appeler", sortie)
+        self.assertIn("must be called", sortie)
 
     def test_un_seul_outil(self):
         for outils in ((("outils", OUTIL_FR), ("tools", OUTIL_EN)), ()):
@@ -458,7 +458,7 @@ class JobManifeste(unittest.TestCase):
                 self.setUp()
                 code, sortie = self.lancer([("manifestes/libyaml-0050.yaml", MANIFESTE_FR)], outils=outils)
                 self.assertEqual((code, self.journal), (1, []), sortie)
-                self.assertIn("exactement un outil", sortie)
+                self.assertIn("exactly one tool", sortie)
 
     def test_commande_et_options_demandees_a_l_aide(self):
         """Jamais deviné : une commande sans les options voulues (un relais qui refuse l'ancien nom, par exemple)

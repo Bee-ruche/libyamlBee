@@ -1,0 +1,36 @@
+task: libyaml-0021
+user: bidji29
+agent:
+  model: "Claude Opus 5.5 (claude-opus-5-5), builder launched by La Ruche's architect"
+  client: bee 0.1.0
+summary: "libyamlBee writes English: verdict.json, metric ids, ab.py's report and bee-ci.yml's texts; the registry is read in English only, its metric ids in both vocabularies until ruche-0149."
+change: >
+  As re-scoped by the council on 11 Nov (no common judge or plugin in libyamlBee yet). (1) bee/ci/verdict.py
+  writes verdict.json in English by names.yaml's fork_verdict family: ci green/red, failed_step with English step
+  labels, metric, beyond_noise, measurements, changed_lines, bootstrap, steps (passed/failed/absent) and details.
+  (2) Metric ids in English where the fork emits them: banc.c's JSON line, ab.py's report, the verdict's metric,
+  instructions and degradations (parse_throughput, load_throughput, emit_throughput, max_memory_kb,
+  instructions_parse/_load/_emit). bee/ci/vocabulaire.py reads the registry's task and project files with French or
+  English ids (METRIQUES_FR), one vocabulary per document, until ruche-0149 renames the registry's data.
+  (3) ab.py's report keys in English (names.yaml ab_report and judge_report; direction and unit values too); its
+  docstring, description and --depot help now describe libyaml, not miniz. (4) bee-ci.yml: job and step names,
+  comments, notices and the fallback verdict in English; BEE_JUGES and bee/ci/juges.sh translated together, and
+  test_verdict.py now checks that the two copies are identical and behave the same (that test did not exist in
+  libyamlBee). (5) Registry main has no taches/, projets/, outils/, French keys or values, verifier-fork or
+  --registre any more: tache.py, vocabulaire.py, verifier_fork.py and the dependencies step read the English names
+  only. The PR's manifest is still read in either vocabulary (bee reads both until its DATE_D), and manifestes/ and
+  CONTRIBUTION.yaml are still found. (6) libyaml-0019's follow-ups: generer.py's messages in English; bee/README.md
+  and AGENTS.md describe the round trip and the fuzzing that exist (libyaml-0003, libyaml-0002) and their real limits.
+  AGENTS.md is outside this task's files (.github/workflows/, bee/): one table row, the review follow-up of
+  libyaml-0019 that was handed to this task, kept here rather than in a PR of its own.
+tested:
+  - "In bee/sandbox/sans-docker.sh: bee/ci/test_verdict.py (41 tests, OK), bee/bench/test_ab.py (10 tests, OK), bee/tests/lancer.sh (40 event streams and 62 round trips identical to the reference)."
+  - "A mutation of BEE_JUGES in a scratch copy fails the two new Juges tests."
+  - "ab.py before and after on the same revisions (269d1ec against 1a8baf5, 6 repetitions, --instructions), each in its sandbox: the old report translated by names.yaml has exactly the new report's 141 key paths; 38 deterministic values are equal, instruction counts included (249769850, 341192769, 461725565)."
+  - "verdict.py before and after on the same artifacts in 5 scenarios (green; red step; red without result; task copy missing; green with degradations and bootstrap): the old verdict.json translated key by key by names.yaml's fork_verdict, plus the disclosed map for steps, labels and details, equals the new one in all 5."
+  - "In a temporary copy of registry main: bee record-verdict records the English and the French verdict of the same inputs identically, records the English red verdict and the workflow's English fallback verdict, and refuses an English verdict with another metric; bee record-measurement records the French report and its English translation identically, and accepts the real new report."
+untested:
+  - "The CI of this PR runs the base's scripts (judges from the base): its own verdict.json is still French; the English verdict first appears on the PR after the merge."
+  - "ARM64 and the 600 s fuzzing run: only in the CI."
+doubts: "Names names.yaml does not hold were chosen here: the steps keys (judges, manifest_and_size, build_x86_64, determinism_x86_64, ab_bench…), their values passed/failed, the step labels, and the details keys (metric_origin, manifest, task, head, gains_by_metric, sign_test, method). bee does not read them; miniz-0050 may choose others. Kept French on purpose: state files and their values, job and step ids, artifact names, GITHUB_OUTPUT names, environment variables and script options, because the PR's workflow runs the base's scripts."
+actual_size: M

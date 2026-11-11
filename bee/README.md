@@ -1,51 +1,51 @@
-# Outillage d'évaluation Bee pour libyaml
+# Bee evaluation tooling for libyaml
 
-Ce dossier `bee/` contient tout ce qui **juge** les contributions à ce fork : corpus, oracle de
-déterminisme, banc de mesure, et (à venir) fuzzing et CI. Le code de libyaml lui-même n'y est pas
-modifié. libyamlBee est un **fork indépendant** de [libyaml](https://github.com/yaml/libyaml), géré
-par le projet [Bee](https://github.com/Bee-ruche/registre) ; il n'est pas affilié au projet d'origine.
+This `bee/` folder holds everything that **judges** the contributions to this fork: corpus, determinism
+oracle, measurement bench, and (to come) fuzzing and CI. The code of libyaml itself is not modified
+here. libyamlBee is an **independent fork** of [libyaml](https://github.com/yaml/libyaml), run by the
+[Bee](https://github.com/Bee-ruche/registre) project; it is not affiliated with the original project.
 
-## Ce qu'une contribution doit respecter
+## What a contribution must respect
 
-Une optimisation rend l'analyse ou l'émission plus rapide **sans changer le résultat** : pour chaque
-entrée, libyaml doit produire **exactement le même flux d'événements** et le même statut (succès ou
-erreur d'analyse). C'est l'invariant que vérifie l'oracle.
+An optimization makes parsing or emitting faster **without changing the result**: for each input,
+libyaml must produce **exactly the same event stream** and the same status (success or parse
+error). This is the invariant the oracle checks.
 
-## Prérequis
+## Prerequisites
 
-`gcc` (ou `clang`), `make`, `python3` (3.8+). Pour le profilage : `valgrind`. Pour libFuzzer :
-`clang` avec `libclang-rt`. libyaml se compile sans `config.h` ; l'outillage fournit les macros de
-version et `YAML_DECLARE_STATIC` (voir `bee/Makefile`).
+`gcc` (or `clang`), `make`, `python3` (3.8+). For profiling: `valgrind`. For libFuzzer:
+`clang` with `libclang-rt`. libyaml builds without `config.h`; the tooling provides the version
+macros and `YAML_DECLARE_STATIC` (see `bee/Makefile`).
 
-## Sandbox : exécuter le code sans réseau ni secret
+## Sandbox: running the code without network or secrets
 
-Le code des contributions s'exécute isolé (commandement 6). Sans Docker, par exemple dans une
-session cloud jetable, sous Linux :
-
-```bash
-bee/sandbox/sans-docker.sh make -C bee oracle    # une commande
-bee/sandbox/sans-docker.sh bash                  # une session
-```
-
-Le script lance la commande à la racine du dépôt, sans réseau, sans voir les processus de la machine
-(espace de noms PID, avec son propre `/proc`), sans les variables d'environnement de l'utilisateur
-(jetons, proxy), avec un dossier personnel vide (`~/.config/gh` est masqué) et un `/tmp` vide, à elle.
-Il exige les espaces de noms utilisateur et PID (`unshare -r --pid`) ; s'ils sont refusés, il le dit. Le fork n'a pas encore
-d'image Docker (à construire par la ruche, sur le modèle de `bee/sandbox/Dockerfile` de minizBee).
-
-## Déterminisme (correction)
+The contributions' code runs isolated (commandment 6). Without Docker, for example in a
+disposable cloud session, on Linux:
 
 ```bash
-bee/tests/lancer.sh                 # construit l'oracle, génère le corpus, compare aux empreintes
-bee/tests/lancer.sh --sans-empreintes   # pour une tâche autorisée à changer la sortie
+bee/sandbox/sans-docker.sh make -C bee oracle    # one command
+bee/sandbox/sans-docker.sh bash                  # a session
 ```
 
-Pour chaque fichier du corpus, `bee/tests/oracle.c` écrit le flux d'événements canonique (format
-yaml-test-suite : `+STR`, `+MAP &ancre <tag>`, `=VAL`, `=ALI`, …). On compare son empreinte SHA-256
-et son statut à `bee/tests/empreintes-reference.txt`, figé à la révision de base. Le moindre écart
-fait échouer les tests.
+The script runs the command at the repository's root, without network, without seeing the machine's
+processes (PID namespace, with its own `/proc`), without the user's environment variables
+(tokens, proxy), with an empty home folder (`~/.config/gh` is hidden) and an empty `/tmp` of its own.
+It requires user and PID namespaces (`unshare -r --pid`); if they are refused, it says so. The fork has
+no Docker image yet (to be built by the hive, on the model of minizBee's `bee/sandbox/Dockerfile`).
 
-## Banc de mesure
+## Determinism (correctness)
+
+```bash
+bee/tests/lancer.sh                 # builds the oracle, generates the corpus, compares with the fingerprints
+bee/tests/lancer.sh --sans-empreintes   # for a task allowed to change the output
+```
+
+For each file of the corpus, `bee/tests/oracle.c` writes the canonical event stream (yaml-test-suite
+format: `+STR`, `+MAP &anchor <tag>`, `=VAL`, `=ALI`, …). Its SHA-256 fingerprint and its status
+are compared with `bee/tests/empreintes-reference.txt`, frozen at the base revision. The slightest
+difference fails the tests.
+
+## Measurement bench
 
 ```bash
 make -C bee banc
@@ -53,33 +53,33 @@ bee/construction/banc/banc --corpus bee/corpus/donnees --passes 3
 python3 bee/bench/ab.py --base upstream/master --candidate HEAD --repetitions 10 --instructions
 ```
 
-Quatre métriques : `debit_analyse` (parseur d'événements seul), `debit_chargement`
-(`yaml_parser_load`, arbre du document), `debit_emission` (`yaml_emitter_dump`), `memoire_max_ko`
-(pic de tas d'un processus fils qui charge et émet tout le corpus). `ab.py` compare deux révisions en
-alternance stricte et tranche le bruit par un **test du signe** sur les paires entrelacées (au moins
-9 paires gagnées sur 10) ; avec `--instructions`, il compte aussi les instructions (Cachegrind).
-L'analyse de YAML est limitée par le CPU : une baisse d'instructions se voit au chronomètre.
+Four metrics: `debit_analyse` (event parser alone), `debit_chargement`
+(`yaml_parser_load`, document tree), `debit_emission` (`yaml_emitter_dump`), `memoire_max_ko`
+(heap peak of a child process that loads and emits the whole corpus). `ab.py` compares two revisions in
+strict alternation and decides what is beyond noise with a **sign test** on the interleaved pairs (at least
+9 pairs won out of 10); with `--instructions`, it also counts instructions (Cachegrind).
+YAML parsing is CPU-bound: a drop in instructions shows on the stopwatch.
 
 ## Corpus
 
-`python3 bee/corpus/generer.py` écrit un corpus déterministe dans `bee/corpus/donnees/` et vérifie
-`bee/corpus/SHA256SUMS`. Il mêle des documents synthétiques variés (maps et séquences en bloc, styles
-de scalaires, profondeurs variées) et des échantillons fixes qui couvrent le style « flow », les
-ancres et alias, le multi-documents, les commentaires, les scalaires littéraux et pliés, les tags, et
-quelques configurations réalistes (Kubernetes, CI). Aucune donnée n'est téléchargée.
+`python3 bee/corpus/generer.py` writes a deterministic corpus in `bee/corpus/donnees/` and checks
+`bee/corpus/SHA256SUMS`. It mixes varied synthetic documents (block maps and sequences, scalar
+styles, varied depths) and fixed samples that cover the flow style, anchors and aliases,
+multi-document streams, comments, literal and folded scalars, tags, and a few realistic
+configurations (Kubernetes, CI). No data is downloaded.
 
-## Périmètre
+## Scope
 
-Les chemins qui jugent les contributions (`bee/**`, `tests/**`, `.github/**`) ne peuvent pas être
-modifiés par une tâche d'optimisation (commandement 3). Les sources de libyaml jugées sont `src/*.c`
-et `include/yaml.h`.
+The paths that judge the contributions (`bee/**`, `tests/**`, `.github/**`) cannot be
+modified by an optimization task (commandment 3). The libyaml sources that are judged are `src/*.c`
+and `include/yaml.h`.
 
-## Limites connues
+## Known limits
 
-- **Émetteur et round-trip.** L'oracle vérifie l'analyse. Une vérification d'aller-retour (événements
-  → YAML → événements identiques) pour les optimisations de l'émetteur reste à ajouter.
-- **Fuzzing.** Le harnais de fuzzing différentiel de l'analyseur (entrée arbitraire, ASan/UBSan)
-  n'est pas encore écrit : c'est une bonne tâche Bee pour durcir le fork.
-- **Sandbox.** Le Dockerfile n'est pas encore épinglé par digest.
-- **Non vérifié hors cette machine.** Les premiers chiffres viennent d'un seul environnement ; le banc
-  distribué du registre (`bee enregistrer-mesure`) élargira à d'autres configurations.
+- **Emitter and round trip.** The oracle checks parsing. A round-trip check (events
+  → YAML → identical events) for emitter optimizations remains to be added.
+- **Fuzzing.** The parser's differential fuzzing harness (arbitrary input, ASan/UBSan)
+  is not written yet: it is a good Bee task to harden the fork.
+- **Sandbox.** The Dockerfile is not pinned by digest yet.
+- **Not checked beyond this machine.** The first figures come from a single environment; the
+  registry's distributed bench (`bee record-measurement`) will extend them to other configurations.

@@ -36,19 +36,19 @@ while [ $# -gt 0 ]; do
     --sans-empreintes) mode="sans" ;;
     --regenerer-empreintes) mode="regenerer" ;;
     --source) SOURCE="$(cd "$2" && pwd)"; shift ;;
-    *) echo "option inconnue : $1" >&2; exit 2 ;;
+    *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
   shift
 done
 
-echo "== 1/4 Corpus de référence"
+echo "== 1/4 Reference corpus"
 python3 "$BEE/corpus/generer.py" || exit 1
 
-echo "== 2/4 Compilation de l'oracle et de l'aller-retour (sources : $SOURCE)"
+echo "== 2/4 Building the oracle and the round trip (sources: $SOURCE)"
 make --no-print-directory -s -C "$BEE" SOURCE="$SOURCE" CONSTR="$CONSTR" oracle aller-retour || exit 1
 oracle="$CONSTR/oracle"
 
-echo "== 3/4 Analyse du corpus et empreintes"
+echo "== 3/4 Parsing the corpus, fingerprints"
 donnees="$BEE/corpus/donnees"
 tmp="$(mktemp)"
 tmp_ar="$(mktemp)"
@@ -62,14 +62,14 @@ for f in "$donnees"/*.yaml; do
 done
 sort -k3 "$tmp" -o "$tmp"
 
-echo "== 4/4 Aller-retour de l'émetteur (événements → YAML → événements)"
+echo "== 4/4 Emitter round trip (events → YAML → events)"
 "$CONSTR/aller_retour" --internes "$donnees"/*.yaml > "$tmp_ar"
 statut_ar=$?
 sort -k3 "$tmp_ar" -o "$tmp_ar"
 
 if [ "$mode" = "regenerer" ]; then
   if [ "$statut_ar" -ne 0 ]; then
-    echo "Aller-retour en échec (code $statut_ar) : aucune empreinte réécrite." >&2
+    echo "Round trip failed (code $statut_ar): no fingerprint rewritten." >&2
     rm -f "$tmp" "$tmp_ar"; exit 1
   fi
   { echo "# Empreintes du flux d'événements de l'oracle Bee pour libyaml (bee/tests/lancer.sh)."
@@ -83,7 +83,7 @@ if [ "$mode" = "regenerer" ]; then
   n="$(wc -l < "$tmp")"
   n_ar="$(wc -l < "$tmp_ar")"
   rm -f "$tmp" "$tmp_ar"
-  echo "empreintes-reference.txt ($n fichiers) et empreintes-aller-retour.txt ($n_ar documents) réécrits."
+  echo "empreintes-reference.txt ($n files) and empreintes-aller-retour.txt ($n_ar documents) rewritten."
   exit 0
 fi
 
@@ -92,46 +92,46 @@ total_ar="$(wc -l < "$tmp_ar")"
 if [ "$mode" = "sans" ]; then
   rm -f "$tmp" "$tmp_ar"
   if [ "$statut_ar" -ne 0 ]; then
-    echo "RÉSULTAT : ÉCHEC, l'aller-retour de l'émetteur échoue (détail plus haut)." >&2
+    echo "RESULT: FAILED, the emitter round trip fails (details above)." >&2
     exit 1
   fi
-  echo "RÉSULTAT : OK (mode --sans-empreintes), $total fichiers analysés, aller-retour stable, empreintes non vérifiées."
+  echo "RESULT: OK (--sans-empreintes mode), $total files parsed, round trip stable, fingerprints not checked."
   exit 0
 fi
 
 if [ ! -f "$REFERENCE" ] || [ ! -f "$REFERENCE_AR" ]; then
-  echo "empreintes-reference.txt ou empreintes-aller-retour.txt manquant : lancez --regenerer-empreintes sur la base." >&2
+  echo "empreintes-reference.txt or empreintes-aller-retour.txt missing: run --regenerer-empreintes on the base." >&2
   rm -f "$tmp" "$tmp_ar"; exit 2
 fi
 echec=0
 attendu="$(grep -v '^#' "$REFERENCE" | sort -k3)"
 obtenu="$(cat "$tmp")"
 if [ "$attendu" = "$obtenu" ]; then
-  echo "Déterminisme : $total flux d'événements identiques à la référence."
+  echo "Determinism: $total event streams identical to the reference."
 else
-  echo "ÉCHEC : le flux d'événements a changé pour :" >&2
+  echo "FAILED: the event stream changed for:" >&2
   diff <(echo "$attendu") <(echo "$obtenu") | grep '^[<>]' | awk '{print "  "$0}' | head -20 >&2
   echec=1
 fi
 if [ "$statut_ar" -ne 0 ]; then
-  echo "ÉCHEC : l'aller-retour de l'émetteur ne relit pas le même flux d'événements (détail plus haut)." >&2
+  echo "FAILED: the emitter round trip does not read back the same event stream (details above)." >&2
   echec=1
 fi
 attendu_ar="$(grep -v '^#' "$REFERENCE_AR" | sort -k3)"
 obtenu_ar="$(cat "$tmp_ar")"
 rm -f "$tmp" "$tmp_ar"
 if [ "$attendu_ar" = "$obtenu_ar" ]; then
-  echo "Aller-retour : $total_ar sorties de l'émetteur identiques à la référence."
+  echo "Round trip: $total_ar emitter outputs identical to the reference."
 else
-  echo "ÉCHEC : la sortie de l'émetteur (ou le statut d'aller-retour) a changé pour :" >&2
+  echo "FAILED: the emitter output (or the round-trip status) changed for:" >&2
   diff <(echo "$attendu_ar") <(echo "$obtenu_ar") | grep '^[<>]' | awk '{print "  "$0}' | head -20 >&2
   echec=1
 fi
 if [ "$echec" -eq 0 ]; then
-  echo "RÉSULTAT : OK, l'analyse et l'émission sont inchangées sur tout le corpus."
+  echo "RESULT: OK, parsing and emitting are unchanged on the whole corpus."
   exit 0
 fi
-echo "Un changement d'empreinte est interdit sauf si la tâche l'autorise (relancez --sans-empreintes) ;" >&2
-echo "un aller-retour en échec ne l'est jamais." >&2
-echo "RÉSULTAT : ÉCHEC." >&2
+echo "A fingerprint change is forbidden unless the task allows it (rerun with --sans-empreintes);" >&2
+echo "a failed round trip never is." >&2
+echo "RESULT: FAILED." >&2
 exit 1

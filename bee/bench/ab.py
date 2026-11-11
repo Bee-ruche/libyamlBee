@@ -80,7 +80,7 @@ class Erreur(Exception):
 def executer(commande, **options):
     resultat = subprocess.run(commande, capture_output=True, text=True, **options)
     if resultat.returncode != 0:
-        raise Erreur(f"échec de « {' '.join(commande)} » (code {resultat.returncode}) :\n"
+        raise Erreur(f"« {' '.join(commande)} » failed (code {resultat.returncode}):\n"
                      f"{resultat.stdout[-2000:]}{resultat.stderr[-4000:]}")
     return resultat.stdout
 
@@ -97,7 +97,7 @@ def resoudre(depot, rev):
     try:
         commit = executer(["git", "-C", depot, "rev-parse", "--verify", "--quiet", rev + "^{commit}"]).strip()
     except Erreur:
-        raise Erreur(f"révision inconnue : {rev} (essayez git fetch, ou un identifiant de commit)")
+        raise Erreur(f"unknown revision: {rev} (try git fetch, or a commit id)")
     return {"rev": rev, "commit": commit}
 
 
@@ -117,7 +117,7 @@ def compiler(source, dossier_travail, etiquette):
              env=environnement)
     binaire = os.path.join(constr, "banc")
     if not os.path.exists(binaire):
-        raise Erreur(f"le banc n'a pas été produit pour {etiquette}")
+        raise Erreur(f"the bench was not built for {etiquette}")
     return binaire
 
 
@@ -131,16 +131,16 @@ def lancer_banc(binaire, corpus, options_banc, cpu):
     sortie = subprocess.run([binaire, "--corpus", corpus] + options_banc, capture_output=True, text=True,
                             preexec_fn=fixer_cpu(cpu))
     if sortie.returncode != 0:
-        raise Erreur(f"le banc {binaire} a échoué (code {sortie.returncode}) : {sortie.stderr.strip()}")
+        raise Erreur(f"the bench {binaire} failed (code {sortie.returncode}): {sortie.stderr.strip()}")
     try:
         return json.loads(sortie.stdout.strip().splitlines()[-1])
     except (ValueError, IndexError):
-        raise Erreur(f"sortie illisible du banc {binaire} : {sortie.stdout!r}")
+        raise Erreur(f"unreadable output from the bench {binaire}: {sortie.stdout!r}")
 
 
 def compter_instructions(binaire, corpus, scenario, dossier_travail, etiquette, prefixe):
     if shutil.which("valgrind") is None:
-        raise Erreur("--instructions demande valgrind, introuvable dans le PATH")
+        raise Erreur("--instructions needs valgrind, not found in the PATH")
     info = json.loads(executer([binaire, "--info"]))
     fichier = os.path.join(dossier_travail, f"cachegrind-{etiquette}-{scenario}.out")
     commande = ["valgrind", "--tool=cachegrind", "--cache-sim=no", f"--cachegrind-out-file={fichier}"]
@@ -150,10 +150,10 @@ def compter_instructions(binaire, corpus, scenario, dossier_travail, etiquette, 
                  "--sans-memoire"]
     resultat = subprocess.run(commande, capture_output=True, text=True)
     if resultat.returncode != 0:
-        raise Erreur(f"cachegrind a échoué pour {etiquette}/{scenario} : {resultat.stderr[-2000:]}")
+        raise Erreur(f"cachegrind failed for {etiquette}/{scenario}: {resultat.stderr[-2000:]}")
     trouve = re.search(r"I\s+refs:\s+([\d,]+)", resultat.stderr)
     if not trouve:
-        raise Erreur(f"décompte d'instructions introuvable dans la sortie de cachegrind ({etiquette}/{scenario})")
+        raise Erreur(f"instruction count not found in cachegrind's output ({etiquette}/{scenario})")
     return int(trouve.group(1).replace(",", "")), bool(info.get("cachegrind_requetes_client"))
 
 
@@ -227,52 +227,52 @@ def description_machine():
 
 
 def afficher_tableau(rapport):
-    lignes = [f"{'métrique':26s} {'médiane A':>12s} {'médiane B':>12s} {'gain':>8s}  {'B gagne':>8s}  verdict"]
+    lignes = [f"{'metric':26s} {'median A':>12s} {'median B':>12s} {'gain':>8s}  {'B wins':>8s}  verdict"]
     for nom, m in rapport["metriques"].items():
         a, b = m["A"], m["B"]
         if a["mediane"] is None:
             continue
         s = m["test_du_signe"]
-        gain = "-" if m["gain"] is None else f"{100 * m['gain']:+.2f} %"
+        gain = "-" if m["gain"] is None else f"{100 * m['gain']:+.2f}%"
         if m["au_dela_du_bruit"]:
-            verdict = "amélioration au-delà du bruit"
+            verdict = "improvement beyond noise"
         elif m["degradation_au_dela_du_bruit"]:
-            verdict = "DÉGRADATION au-delà du bruit"
+            verdict = "DEGRADATION beyond noise"
         else:
-            verdict = "dans le bruit"
+            verdict = "within noise"
         lignes.append(f"{nom:26s} {a['mediane']:12.3f} {b['mediane']:12.3f} {gain:>8s}  "
                       f"{s['victoires_B']:>3d}/{s['paires_utiles']:<4d}  {verdict}"
-                      + (f" ({s['egalites']} égalités écartées)" if s["egalites"] else ""))
+                      + (f" ({s['egalites']} ties set aside)" if s["egalites"] else ""))
     for nom, m in (rapport.get("instructions") or {}).items():
-        gain = "-" if m["gain"] is None else f"{100 * m['gain']:+.3f} %"
+        gain = "-" if m["gain"] is None else f"{100 * m['gain']:+.3f}%"
         if not m["au_dela_du_bruit"]:
-            verdict = "dans le bruit"
+            verdict = "within noise"
         else:
-            verdict = "moins d'instructions" if m["gain"] > 0 else "PLUS d'instructions"
+            verdict = "fewer instructions" if m["gain"] > 0 else "MORE instructions"
         lignes.append(f"{nom:26s} {m['A']:12d} {m['B']:12d} {gain:>8s}  {'':>8s}  {verdict}")
     print("\n".join(lignes), file=sys.stderr)
 
 
 def main():
-    analyseur = argparse.ArgumentParser(description="Banc A/B entrelacé de Bee pour miniz (voir l'aide du module).")
-    analyseur.add_argument("--base", required=True, help="révision A (référence), par ex. upstream/master ou un commit")
-    analyseur.add_argument("--candidate", required=True, help="révision B (candidate), par ex. HEAD ; « :travail » pour la copie de travail")
-    analyseur.add_argument("--repetitions", type=int, default=10, help="exécutions de chaque binaire (défaut 10)")
+    analyseur = argparse.ArgumentParser(description="Bee's interleaved A/B bench for miniz (see the module's help).")
+    analyseur.add_argument("--base", required=True, help="revision A (reference), e.g. upstream/master or a commit")
+    analyseur.add_argument("--candidate", required=True, help="revision B (candidate), e.g. HEAD; « :travail » for the working copy")
+    analyseur.add_argument("--repetitions", type=int, default=10, help="runs of each binary (default 10)")
     analyseur.add_argument("--chauffe", type=int, default=1,
-                           help="exécutions non comptées de A puis B avant la mesure (défaut 1 : caches et fréquence à chaud)")
-    analyseur.add_argument("--instructions", action="store_true", help="compte aussi les instructions avec cachegrind")
-    analyseur.add_argument("--json", help="écrit aussi le rapport JSON dans ce fichier")
-    analyseur.add_argument("--depot", default=os.path.dirname(OUTILLAGE), help="dépôt git de miniz (défaut : celui de ce script)")
-    analyseur.add_argument("--corpus", help="dossier du corpus (défaut : bee/corpus/donnees, régénéré et vérifié)")
-    analyseur.add_argument("--passes", help="transmis au banc (--passes K) : nombre de passes par exécution")
-    analyseur.add_argument("--cpu", type=int, help="épingle les exécutions sur ce cœur (sched_setaffinity)")
-    analyseur.add_argument("--prefixe-instructions", type=int, default=131072, help="octets gardés par fichier pour cachegrind")
-    analyseur.add_argument("--seuil-instructions", type=float, default=0.002, help="écart relatif d'instructions jugé significatif")
-    analyseur.add_argument("--garder", action="store_true", help="ne supprime pas le dossier temporaire (diagnostic)")
+                           help="uncounted runs of A then B before measuring (default 1: warm caches and frequency)")
+    analyseur.add_argument("--instructions", action="store_true", help="also counts instructions with cachegrind")
+    analyseur.add_argument("--json", help="also writes the JSON report to this file")
+    analyseur.add_argument("--depot", default=os.path.dirname(OUTILLAGE), help="git repository of miniz (default: this script's)")
+    analyseur.add_argument("--corpus", help="corpus folder (default: bee/corpus/donnees, regenerated and checked)")
+    analyseur.add_argument("--passes", help="passed to the bench (--passes K): number of passes per run")
+    analyseur.add_argument("--cpu", type=int, help="pins the runs to this core (sched_setaffinity)")
+    analyseur.add_argument("--prefixe-instructions", type=int, default=131072, help="bytes kept per file for cachegrind")
+    analyseur.add_argument("--seuil-instructions", type=float, default=0.002, help="relative difference in instructions deemed significant")
+    analyseur.add_argument("--garder", action="store_true", help="does not delete the temporary folder (diagnosis)")
     args = analyseur.parse_args()
 
     if args.repetitions < 1:
-        raise Erreur("--repetitions doit valoir au moins 1")
+        raise Erreur("--repetitions must be at least 1")
     depot = racine_git(args.depot)
     base, candidat = resoudre(depot, args.base), resoudre(depot, args.candidate)
 
@@ -281,14 +281,14 @@ def main():
         corpus = os.path.join(OUTILLAGE, "corpus", "donnees")
         resultat = subprocess.run([sys.executable, os.path.join(OUTILLAGE, "corpus", "generer.py")], capture_output=True, text=True)
         if resultat.returncode != 0:
-            raise Erreur("corpus non conforme : " + resultat.stderr.strip())
+            raise Erreur("corpus not conforming: " + resultat.stderr.strip())
     options_banc = ["--passes", args.passes] if args.passes else []
 
     dossier_travail = tempfile.mkdtemp(prefix="bee-ab-")
     worktrees = []
     debut = time.time()
     try:
-        print(f"ab : A = {base['rev']} ({base['commit'][:12]}), B = {candidat['rev']} ({candidat['commit'][:12]})", file=sys.stderr)
+        print(f"ab: A = {base['rev']} ({base['commit'][:12]}), B = {candidat['rev']} ({candidat['commit'][:12]})", file=sys.stderr)
         source_a, wt = preparer_source(depot, base, dossier_travail, "A")
         worktrees.append(wt)
         source_b, wt = preparer_source(depot, candidat, dossier_travail, "B")
@@ -302,7 +302,7 @@ def main():
         for i in range(args.repetitions):
             for etiquette in ("A", "B"):
                 mesures[etiquette].append(lancer_banc(binaires[etiquette], corpus, options_banc, args.cpu))
-            print(f"ab : répétition {i + 1}/{args.repetitions} faite", file=sys.stderr)
+            print(f"ab: repetition {i + 1}/{args.repetitions} done", file=sys.stderr)
 
         rapport = {
             "base": base, "candidat": candidat, "repetitions": args.repetitions, "chauffe": args.chauffe,
@@ -320,8 +320,8 @@ def main():
             "metriques": {}, "mesures": {"A": {}, "B": {}},
         }
         if seuil_signe(args.repetitions) is None:
-            print(f"ab : attention, avec {args.repetitions} répétitions le test du signe ne peut jamais conclure "
-                  f"(il en faut au moins 6) : tout restera « dans le bruit ».", file=sys.stderr)
+            print(f"ab: warning, with {args.repetitions} repetitions the sign test can never conclude "
+                  f"(it takes at least 6): everything will stay « within noise ».", file=sys.stderr)
         for nom, sens, unite in METRIQUES:
             valeurs_a = [m.get(nom) for m in mesures["A"]]
             valeurs_b = [m.get(nom) for m in mesures["B"]]
@@ -363,7 +363,7 @@ def main():
                 subprocess.run(["git", "-C", depot, "worktree", "remove", "--force", wt], capture_output=True)
         subprocess.run(["git", "-C", depot, "worktree", "prune"], capture_output=True)
         if args.garder:
-            print(f"ab : dossier temporaire conservé : {dossier_travail}", file=sys.stderr)
+            print(f"ab: temporary folder kept: {dossier_travail}", file=sys.stderr)
         else:
             shutil.rmtree(dossier_travail, ignore_errors=True)
 
@@ -381,5 +381,5 @@ if __name__ == "__main__":
     try:
         sys.exit(main())
     except Erreur as e:
-        print(f"ab : erreur : {e}", file=sys.stderr)
+        print(f"ab: error: {e}", file=sys.stderr)
         sys.exit(2)

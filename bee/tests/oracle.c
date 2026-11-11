@@ -41,12 +41,12 @@ int main(int argc, char *argv[])
     if (argc > 1) {
         input = fopen(argv[1], "rb");
         if (!input) {
-            fprintf(stderr, "oracle : impossible d'ouvrir %s\n", argv[1]);
+            fprintf(stderr, "oracle: cannot open %s\n", argv[1]);
             return 2;
         }
     }
     if (!yaml_parser_initialize(&parser)) {
-        fprintf(stderr, "oracle : initialisation du parseur impossible\n");
+        fprintf(stderr, "oracle: cannot initialize the parser\n");
         return 2;
     }
     yaml_parser_set_input_file(&parser, input);
@@ -54,7 +54,7 @@ int main(int argc, char *argv[])
     for (;;) {
         yaml_event_type_t type;
         if (!yaml_parser_parse(&parser, &event)) {
-            fprintf(stderr, "Parse error: %s\n", parser.problem ? parser.problem : "(inconnu)");
+            fprintf(stderr, "Parse error: %s\n", parser.problem ? parser.problem : "(unknown)");
             yaml_parser_delete(&parser);
             if (input != stdin) fclose(input);
             fflush(stdout);

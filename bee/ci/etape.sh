@@ -8,26 +8,26 @@
 set -uo pipefail
 
 if [ $# -lt 3 ]; then
-  echo "usage : $0 <dossier_etats> <etape> <commande> [arguments...]" >&2
+  echo "usage: $0 <states_folder> <step> <command> [arguments...]" >&2
   exit 2
 fi
 dossier="$1"
 etape="$2"
 shift 2
 case "$etape" in
-  *[!a-z0-9_]*|"") echo "nom d'étape invalide : $etape" >&2; exit 2 ;;
+  *[!a-z0-9_]*|"") echo "invalid step name: $etape" >&2; exit 2 ;;
 esac
 
 mkdir -p "$dossier"
 echo "echec" > "$dossier/$etape.txt"
-echo "== étape $etape : $*"
+echo "== step $etape: $*"
 "$@"
 code=$?
 if [ "$code" -eq 0 ]; then
   echo "succes" > "$dossier/$etape.txt"
-  echo "== étape $etape : réussie"
+  echo "== step $etape: passed"
 else
   echo "echec" > "$dossier/$etape.txt"
-  echo "== étape $etape : ÉCHEC (code $code)" >&2
+  echo "== step $etape: FAILED (code $code)" >&2
 fi
 exit "$code"

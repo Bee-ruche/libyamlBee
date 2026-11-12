@@ -1,21 +1,21 @@
-/* Banc de mesure Bee pour libyaml.
+/* Bee's measurement bench for libyaml.
 
-   Sortie (stdout) : un objet JSON sur une ligne, avec exactement ces clés :
-     debit_analyse      (Mo/s d'entrée : parseur d'événements seul, scanner + parser)
-     debit_chargement   (Mo/s d'entrée : yaml_parser_load, construction de l'arbre du document)
-     debit_emission     (Mo/s d'entrée : yaml_emitter_dump d'un document chargé)
-     memoire_max_ko     (Ko, ru_maxrss d'un processus fils qui charge et émet tout le corpus)
-   Une métrique non mesurée (option --scenario) vaut null.
+   Output (stdout): one JSON object on one line, with exactly these keys (the registry's English metric ids):
+     parse_throughput   (input MB/s: the event parser alone, scanner + parser)
+     load_throughput    (input MB/s: yaml_parser_load, building the document tree)
+     emit_throughput    (input MB/s: yaml_emitter_dump of a loaded document)
+     max_memory_kb      (KB, ru_maxrss of a child process that loads and emits the whole corpus)
+   A metric that is not measured (option --scenario) is null.
 
-   Méthode : le corpus est chargé en mémoire, puis traité fichier par fichier. Une « passe » traite
-   tout le corpus ; le débit retenu est celui de la passe la plus rapide parmi k (meilleur de k,
-   robuste au bruit d'une machine partagée). Pour l'émission, chaque document est d'abord chargé hors
-   chronométrage, puis seul yaml_emitter_dump est mesuré (sortie jetée par un gestionnaire d'écriture).
+   Method: the corpus is loaded in memory, then processed file by file. A « pass » processes the whole corpus; the
+   throughput kept is that of the fastest pass among k (best of k, robust to the noise of a shared machine). For
+   emitting, each document is first loaded outside the timing, then only yaml_emitter_dump is measured (output thrown
+   away by a write handler).
 
-   Usage : banc [--corpus DOSSIER] [--scenario tout|analyse|chargement|emission|memoire]
-                [--passes K] [--prefixe N] [--sans-memoire] [--info]
-   --prefixe N : ne garde que les N premiers octets de chaque fichier (sous-ensemble pour Cachegrind).
-   --info : affiche les capacités du binaire et s'arrête. */
+   Usage: banc [--corpus FOLDER] [--scenario tout|analyse|chargement|emission|memoire]
+               [--passes K] [--prefixe N] [--sans-memoire] [--info]
+   --prefixe N: keeps only the first N bytes of each file (subset for Cachegrind).
+   --info: prints the binary's capabilities and stops. */
 
 #include <yaml.h>
 
@@ -221,10 +221,10 @@ int main(int argc, char *argv[])
     if (tout || !strcmp(scenario, "emission")) d_emission = meilleur_debit(&c, "emission", passes);
     if ((tout || !strcmp(scenario, "memoire")) && !sans_memoire) mem = memoire_corpus(dossier, prefixe);
 
-    printf("{\"debit_analyse\": "); imprimer(d_analyse);
-    printf(", \"debit_chargement\": "); imprimer(d_chargement);
-    printf(", \"debit_emission\": "); imprimer(d_emission);
-    printf(", \"memoire_max_ko\": "); imprimer(mem < 0 ? -1 : (double)mem);
+    printf("{\"parse_throughput\": "); imprimer(d_analyse);
+    printf(", \"load_throughput\": "); imprimer(d_chargement);
+    printf(", \"emit_throughput\": "); imprimer(d_emission);
+    printf(", \"max_memory_kb\": "); imprimer(mem < 0 ? -1 : (double)mem);
     printf("}\n");
 
     bee_corpus_liberer(&c);

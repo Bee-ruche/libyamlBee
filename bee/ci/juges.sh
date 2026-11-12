@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
-# Prépare les juges d'un job de la CI Bee : le dossier bee/ de la base de la PR.
+# Prepares the judges of a Bee CI job: the bee/ folder of the PR's base.
 #
-# Usage : juges.sh <dossier_base> <dossier_pr> <base_sha>     (variable ETATS : dossier des états)
+# Usage: juges.sh <base_folder> <pr_folder> <base_sha>     (variable ETATS: the states folder)
 #
-# Cas normal : la base contient bee/, rien ne change ; les juges sont ceux de la base.
-# Amorçage : si et seulement si <base_sha> vaut exactement BEE_COMMIT_AMORCAGE (master d'origine du
-#   fork, avant tout outillage Bee), bee/ de la PR est copié dans la base. Les juges viennent alors
-#   de la PR elle-même ; le journal le signale et <ETATS>/amorcage.txt le note pour verdict.json.
-# Tout autre cas sans bee/ dans la base : échec (code 1). Une base sans juges n'est pas acceptée.
-# Dans tous les cas, <ETATS>/juges.txt reçoit « succes » ou « echec » (étape « juges » du verdict).
+# Normal case: the base contains bee/, nothing changes; the judges are the base's.
+# Bootstrap: if and only if <base_sha> is exactly BEE_COMMIT_AMORCAGE (the fork's original master, before any Bee
+#   tooling), the PR's bee/ is copied into the base. The judges then come from the PR itself; the log says so and
+#   <ETATS>/amorcage.txt records it for verdict.json (bootstrap: true).
+# Any other case without bee/ in the base: failure (code 1). A base without judges is not accepted.
+# In every case, <ETATS>/juges.txt receives « succes » or « echec » (the verdict's step « juges »). These values and
+# file names stay as they are: the workflow's copy comes from the PR, and the base's bee/ci/verdict.py reads them.
 #
-# Le workflow .github/workflows/bee-ci.yml contient une copie identique de la logique ci-dessous
-# (variable BEE_JUGES, exécutée par l'étape « Juges » de chaque job), car à l'amorçage la base ne
-# contient pas encore ce script. Les deux copies doivent rester identiques ; contrairement au fork
-# miniz, ce fork n'a pas encore de test qui le vérifie (bee/ci/test_verdict.py ne le couvre pas).
+# The workflow .github/workflows/bee-ci.yml holds an identical copy of the logic below (variable BEE_JUGES, run by the
+# « Judges » step of each job), because at bootstrap the base does not contain this script yet. The two copies must stay
+# identical: bee/ci/test_verdict.py checks it.
 set -euo pipefail
 
 if [ $# -ne 3 ]; then
@@ -26,13 +26,13 @@ base_sha="$3"
 etats="${ETATS:-etats}"
 BEE_COMMIT_AMORCAGE="${BEE_COMMIT_AMORCAGE:-90a56d4500aa1a1798514c5cb55c3ad4cb095f94}"
 
-# --- début de la logique recopiée dans bee-ci.yml ---
+# --- start of the logic copied into bee-ci.yml ---
 mkdir -p "$etats"
 if [ -f "$base/bee/ci/etape.sh" ]; then
-  echo "Juges : bee/ de la base de la PR ($base_sha)."
+  echo "Judges: bee/ of the PR's base ($base_sha)."
   echo "succes" > "$etats/juges.txt"
 elif [ "$base_sha" = "$BEE_COMMIT_AMORCAGE" ] && [ -f "$pr/bee/ci/etape.sh" ]; then
-  echo "::warning::AMORÇAGE : la base $base_sha (commit d'amorçage épinglé) ne contient pas bee/ ; les juges viennent de la PR elle-même (verdict.json : amorcage: true)."
+  echo "::warning::BOOTSTRAP: the base $base_sha (pinned bootstrap commit) does not contain bee/; the judges come from the PR itself (verdict.json: bootstrap: true)."
   rm -rf "$base/bee"
   cp -a "$pr/bee" "$base/bee"
   mkdir -p "$base/.github/workflows"
@@ -41,7 +41,7 @@ elif [ "$base_sha" = "$BEE_COMMIT_AMORCAGE" ] && [ -f "$pr/bee/ci/etape.sh" ]; t
   echo "succes" > "$etats/juges.txt"
 else
   echo "echec" > "$etats/juges.txt"
-  echo "::error::La base de la PR ($base_sha) ne contient pas bee/ : pas de juges, CI refusée (seul le commit d'amorçage $BEE_COMMIT_AMORCAGE est accepté sans juges)." >&2
+  echo "::error::The PR's base ($base_sha) does not contain bee/: no judges, CI refused (only the bootstrap commit $BEE_COMMIT_AMORCAGE is accepted without judges)." >&2
   exit 1
 fi
-# --- fin de la logique recopiée dans bee-ci.yml ---
+# --- end of the logic copied into bee-ci.yml ---

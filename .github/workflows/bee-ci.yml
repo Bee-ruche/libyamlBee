@@ -1,22 +1,22 @@
-# CI Bee du fork libyaml (https://github.com/Bee-ruche/libyamlBee). Fork indépendant, non affilié au projet libyaml.
+# Bee CI of the libyaml fork (https://github.com/Bee-ruche/libyamlBee). Independent fork, not affiliated with the libyaml
+# project.
 #
-# Étapes, dans l'ordre (la première en échec est rapportée, voir docs/evaluation.md du registre Bee) :
-#   1. manifeste et taille : bee verifier-fork, avec l'outil du registre (branche main)
-#   2. compilation et tests d'origine de libyaml (cmake + ctest), x86-64 et ARM64
-#   3. déterminisme du flux d'événements (bee/tests, oracle + empreintes), x86-64 et ARM64
-#   4. fuzzing différentiel de l'analyseur (base contre PR), libFuzzer + ASan/UBSan, 10 minutes, x86-64
-#   5. banc A/B entrelacé : point de départ de la PR contre tête de la PR, 10 répétitions, Cachegrind
-#   6. tests de l'outillage de CI de la PR (bee/ci/test_verdict.py), si elle modifie bee/ci/, bee/sandbox/ ou ce workflow
-#   7. verdict.json, publié en artefact « verdict » (lu par le workflow verdicts.yml du registre)
+# Steps, in order (the first failed one is reported, see docs/evaluation.md in the Bee registry):
+#   1. manifest and size: bee check-fork, with the registry's tool (branch main)
+#   2. build and original tests of libyaml (cmake + ctest), x86-64 and ARM64
+#   3. event stream determinism (bee/tests, oracle + fingerprints, emitter round trip), x86-64 and ARM64
+#   4. differential fuzzing of the parser (base against PR), libFuzzer + ASan/UBSan, 10 minutes, x86-64
+#   5. interleaved A/B bench: the PR's start point against the PR's head, 10 repetitions, Cachegrind
+#   6. tests of the PR's CI tooling (bee/ci/test_verdict.py), if it modifies bee/ci/, bee/sandbox/ or this workflow
+#   7. verdict.json, published as the artifact « verdict » (read by the registry's workflow verdicts.yml)
 #
-# Sécurité : identique à la CI de miniz. permissions contents: read, aucun secret, persist-credentials
-# false, déclencheur pull_request. Les juges (bee/) viennent de la BASE de la PR ; seules les sources
-# de libyaml viennent de la PR, qui ne peut pas assouplir ces fichiers-là. CONTRIBUTION.yaml et la
-# tâche sont des données (yaml.safe_load). « ci » est décidée par le job verdict d'après needs.*.result.
-# MAIS ce fichier de workflow est celui de la PR (déclencheur pull_request) : une PR qui modifie .github/
-# ou bee/ peut fabriquer son propre verdict. Le registre le détecte de son côté (liste des fichiers de la
-# PR lue auprès de l'API GitHub, verdicts.yml) : verdict refusé pour une optimisation, relecture du
-# conseil ou d'un Confirmé exigée pour une tâche d'outillage (R3).
+# Security: the same as miniz's CI. permissions contents: read, no secret, persist-credentials false, trigger
+# pull_request. The judges (bee/) come from the PR's BASE; only libyaml's sources come from the PR, which cannot relax
+# those files. CONTRIBUTION.yaml and the task are data (yaml.safe_load). « ci » is decided by the verdict job from
+# needs.*.result.
+# BUT this workflow file is the PR's (pull_request trigger): a PR that modifies .github/ or bee/ can forge its own
+# verdict. The registry detects it on its side (the PR's list of files, read from GitHub's API, verdicts.yml): verdict
+# refused for an optimization, review by the council or a Confirmed member required for a tooling task (R3).
 name: bee-ci
 
 on:
@@ -34,17 +34,18 @@ env:
   TETE_SHA: ${{ github.event.pull_request.head.sha }}
   REGISTRE: Bee-ruche/registre
   ETATS: ${{ github.workspace }}/etats
-  # Master d'origine du fork, avant tout outillage Bee. master porte déjà bee/, donc l'amorçage ne se
-  # déclenche pas ; la variable reste pour cohérence avec bee/ci/juges.sh.
+  # The fork's original master, before any Bee tooling. master already has bee/, so the bootstrap is never triggered;
+  # the variable stays for consistency with bee/ci/juges.sh.
   BEE_COMMIT_AMORCAGE: 90a56d4500aa1a1798514c5cb55c3ad4cb095f94
-  # Copie identique de la logique de bee/ci/juges.sh, exécutée par l'étape « Juges » de chaque job.
+  # Identical copy of the logic of bee/ci/juges.sh, run by the « Judges » step of each job (bee/ci/test_verdict.py
+  # checks that they are identical). It writes the state values the base's bee/ci/verdict.py reads (succes, echec, oui).
   BEE_JUGES: |
     mkdir -p "$etats"
     if [ -f "$base/bee/ci/etape.sh" ]; then
-      echo "Juges : bee/ de la base de la PR ($base_sha)."
+      echo "Judges: bee/ of the PR's base ($base_sha)."
       echo "succes" > "$etats/juges.txt"
     elif [ "$base_sha" = "$BEE_COMMIT_AMORCAGE" ] && [ -f "$pr/bee/ci/etape.sh" ]; then
-      echo "::warning::AMORÇAGE : la base $base_sha (commit d'amorçage épinglé) ne contient pas bee/ ; les juges viennent de la PR elle-même (verdict.json : amorcage: true)."
+      echo "::warning::BOOTSTRAP: the base $base_sha (pinned bootstrap commit) does not contain bee/; the judges come from the PR itself (verdict.json: bootstrap: true)."
       rm -rf "$base/bee"
       cp -a "$pr/bee" "$base/bee"
       mkdir -p "$base/.github/workflows"
@@ -53,13 +54,13 @@ env:
       echo "succes" > "$etats/juges.txt"
     else
       echo "echec" > "$etats/juges.txt"
-      echo "::error::La base de la PR ($base_sha) ne contient pas bee/ : pas de juges, CI refusée (seul le commit d'amorçage $BEE_COMMIT_AMORCAGE est accepté sans juges)." >&2
+      echo "::error::The PR's base ($base_sha) does not contain bee/: no judges, CI refused (only the bootstrap commit $BEE_COMMIT_AMORCAGE is accepted without judges)." >&2
       exit 1
     fi
 
 jobs:
   manifeste:
-    name: Manifeste et taille
+    name: Manifest and size
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
@@ -67,24 +68,24 @@ jobs:
       type: ${{ steps.manifeste.outputs.type }}
       metrique: ${{ steps.manifeste.outputs.metrique }}
     steps:
-      - name: Base de la PR (juges)
+      - name: The PR's base (judges)
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ env.BASE_SHA }}
           path: base
           persist-credentials: false
-      - name: Tête de la PR (historique complet, pour le diff)
+      - name: The PR's head (full history, for the diff)
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ env.TETE_SHA }}
           path: pr
           fetch-depth: 0
           persist-credentials: false
-      - name: Juges (bee/ de la base, ou de la PR en amorçage)
+      - name: Judges (bee/ of the base, or of the PR at bootstrap)
         run: |
           export base=base pr=pr base_sha="${BASE_SHA:?}" etats="${ETATS:?}"
           eval "$BEE_JUGES"
-      - name: Registre Bee (branche main)
+      - name: Bee registry (branch main)
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: ${{ env.REGISTRE }}
@@ -94,18 +95,14 @@ jobs:
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
-      - name: Dépendances de l'outil bee (tools/requirements.txt, ou outils/ avant la bascule du registre en anglais)
+      - name: The bee tool's dependencies (the registry's tools/requirements.txt)
         run: |
-          exigences=()
-          for f in registre/tools/requirements.txt registre/outils/requirements.txt; do
-            if [ -f "$f" ]; then exigences+=("$f"); fi
-          done
-          if [ "${#exigences[@]}" -ne 1 ]; then
-            echo "::error::Il faut exactement un fichier parmi tools/requirements.txt et outils/requirements.txt dans le registre (trouvés : ${exigences[*]:-aucun})." >&2
+          if [ ! -f registre/tools/requirements.txt ]; then
+            echo "::error::The registry has no tools/requirements.txt: the bee tool cannot be installed." >&2
             exit 1
           fi
-          pip install -r "${exigences[0]}"
-      - name: Manifeste, tâche, R1 et commandement 3
+          pip install -r registre/tools/requirements.txt
+      - name: Manifest, task, R1 and commandment 3
         id: manifeste
         env:
           AUTEUR: ${{ github.event.pull_request.user.login }}
@@ -113,14 +110,14 @@ jobs:
         run: |
           mkdir -p donnees
           base/bee/ci/etape.sh "$ETATS" manifeste_et_taille base/bee/ci/manifeste.sh pr registre python3
-      - name: Conserver le manifeste, la tâche et l'état
+      - name: Keep the manifest, the task and the state
         if: always()
         env:
           MANIFESTE: ${{ steps.manifeste.outputs.manifeste }}
         run: |
           mkdir -p donnees
-          # Nom validé par bee/ci/manifeste.sh (manifests/ ou manifestes/libyaml-NNNN.yaml, ou CONTRIBUTION.yaml) ;
-          # un manifeste est un fichier ordinaire : un lien symbolique n'est pas copié.
+          # Name checked by bee/ci/manifeste.sh (manifests/ or manifestes/libyaml-NNNN.yaml, or CONTRIBUTION.yaml);
+          # a manifest is a regular file: a symbolic link is not copied.
           case "$MANIFESTE" in
             manifests/libyaml-[0-9][0-9][0-9][0-9].yaml|manifestes/libyaml-[0-9][0-9][0-9][0-9].yaml|CONTRIBUTION.yaml)
               if [ -f "pr/$MANIFESTE" ] && [ ! -L "pr/$MANIFESTE" ]; then cp "pr/$MANIFESTE" donnees/CONTRIBUTION.yaml 2>/dev/null || true; fi ;;
@@ -134,7 +131,7 @@ jobs:
           if-no-files-found: warn
 
   compilation-et-tests:
-    name: Compilation et tests (${{ matrix.arch }})
+    name: Build and tests (${{ matrix.arch }})
     needs: manifeste
     if: always()
     strategy:
@@ -148,29 +145,29 @@ jobs:
     runs-on: ${{ matrix.machine }}
     timeout-minutes: 30
     steps:
-      - name: Base de la PR (juges ; historique complet pour le corpus)
+      - name: The PR's base (judges; full history for the corpus)
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ env.BASE_SHA }}
           path: base
           fetch-depth: 0
           persist-credentials: false
-      - name: Tête de la PR
+      - name: The PR's head
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ env.TETE_SHA }}
           path: pr
           fetch-depth: 0
           persist-credentials: false
-      - name: Juges (bee/ de la base, ou de la PR en amorçage)
+      - name: Judges (bee/ of the base, or of the PR at bootstrap)
         run: |
           export base=base pr=pr base_sha="${BASE_SHA:?}" etats="${ETATS:?}"
           eval "$BEE_JUGES"
-      - name: Outils (gcc, g++, cmake)
+      - name: Tools (gcc, g++, cmake)
         run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends build-essential cmake
-      - name: Compilation et tests d'origine de libyaml
+      - name: Build and original tests of libyaml
         run: base/bee/ci/etape.sh "$ETATS" compilation_${{ matrix.arch }} base/bee/ci/tests_origine.sh pr "$RUNNER_TEMP/cmake"
-      - name: Déterminisme du flux d'événements
+      - name: Event stream determinism
         if: always()
         run: base/bee/ci/etape.sh "$ETATS" determinisme_${{ matrix.arch }} base/bee/ci/tests.sh pr
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -181,36 +178,36 @@ jobs:
           if-no-files-found: warn
 
   fuzzing:
-    name: Fuzzing 10 minutes (x86-64)
+    name: Fuzzing, 10 minutes (x86-64)
     needs: manifeste
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - name: Base de la PR (harnais ; historique complet pour le corpus de graines)
+      - name: The PR's base (harness; full history for the seed corpus)
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ env.BASE_SHA }}
           path: base
           fetch-depth: 0
           persist-credentials: false
-      - name: Tête de la PR
+      - name: The PR's head
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ env.TETE_SHA }}
           path: pr
           persist-credentials: false
-      - name: Juges (bee/ de la base, ou de la PR en amorçage)
+      - name: Judges (bee/ of the base, or of the PR at bootstrap)
         run: |
           export base=base pr=pr base_sha="${BASE_SHA:?}" etats="${ETATS:?}"
           eval "$BEE_JUGES"
-      - name: Outils (clang 18 et son runtime libFuzzer)
+      - name: Tools (clang 18 and its libFuzzer runtime)
         run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends clang-18 libclang-rt-18-dev
-      # Entrées fautives, journaux et traces ne quittent JAMAIS la machine de CI (docs/securite.md du
-      # registre) : lancer.sh est en mode discret (empreintes seulement) et rejoue chaque entrée fautive
-      # sur la base ; un écart qui y existe déjà est signalé sans compter contre la PR. Le harnais est
-      # celui de la base ; seule la PR qui l'introduit, faute de harnais dans sa base, passe par le sien.
-      - name: Fuzzing différentiel de l'analyseur, 600 s
+      # Faulty inputs, logs and traces NEVER leave the CI machine (the registry's docs/security.md): lancer.sh runs in
+      # discreet mode (fingerprints only) and replays each faulty input on the base; a discrepancy that already exists
+      # there is reported without counting against the PR. The harness is the base's; only the PR that introduces it,
+      # since its base has no harness, goes through its own.
+      - name: Differential fuzzing of the parser, 600 s
         env:
           CLANG: clang-18
           BEE_FUZZ_SORTIES: ${{ runner.temp }}/sorties-fuzz
@@ -218,7 +215,7 @@ jobs:
         run: |
           harnais=base/bee/fuzz/lancer.sh
           if [ ! -f "$harnais" ]; then
-            echo "::notice::La base n'a pas encore de harnais de fuzzing : celui de la PR est utilisé."
+            echo "::notice::The base has no fuzzing harness yet: the PR's is used."
             harnais=pr/bee/fuzz/lancer.sh
           fi
           base/bee/ci/etape.sh "$ETATS" fuzzing bash "$harnais" 600 --source pr --reference base
@@ -230,41 +227,41 @@ jobs:
           if-no-files-found: warn
 
   banc-ab:
-    name: Banc A/B
+    name: A/B bench
     needs: manifeste
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
-      - name: Base de la PR (banc ; historique complet pour le corpus)
+      - name: The PR's base (bench; full history for the corpus)
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ env.BASE_SHA }}
           path: base
           fetch-depth: 0
           persist-credentials: false
-      - name: Tête de la PR (historique complet, pour les git worktree d'ab.py)
+      - name: The PR's head (full history, for ab.py's git worktrees)
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ env.TETE_SHA }}
           path: pr
           fetch-depth: 0
           persist-credentials: false
-      - name: Juges (bee/ de la base, ou de la PR en amorçage)
+      - name: Judges (bee/ of the base, or of the PR at bootstrap)
         run: |
           export base=base pr=pr base_sha="${BASE_SHA:?}" etats="${ETATS:?}"
           eval "$BEE_JUGES"
-      - name: Outils (gcc, valgrind)
+      - name: Tools (gcc, valgrind)
         run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends build-essential valgrind
-      - name: Banc A/B entrelacé, 10 répétitions, avec instructions
+      - name: Interleaved A/B bench, 10 repetitions, with instructions
         run: |
           depart="$(git -C pr merge-base "$BASE_SHA" "$TETE_SHA")"
-          echo "A = point de départ de la PR $depart (base $BASE_SHA), B = tête $TETE_SHA"
+          echo "A = the PR's start point $depart (base $BASE_SHA), B = head $TETE_SHA"
           mkdir -p conserver
           base/bee/ci/etape.sh "$ETATS" banc_ab \
             python3 base/bee/bench/ab.py --depot pr --base "$depart" --candidate "$TETE_SHA" \
               --repetitions 10 --instructions --json "$GITHUB_WORKSPACE/conserver/ab.json"
-      - name: Conserver l'état
+      - name: Keep the state
         if: always()
         run: |
           mkdir -p conserver
@@ -276,41 +273,41 @@ jobs:
           path: conserver/
           if-no-files-found: warn
 
-  # Tests de l'outillage de CI de la PR quand elle modifie bee/ci/, bee/sandbox/ ou ce workflow, sur le modèle de minizBee : code de
-  # la PR, donc job à part, lancé dans la sandbox de la base (sans réseau, processus ni variables d'environnement), en lecture
-  # seule, sans secret ni identifiant conservé, sans artefact ni sortie ; seul son résultat compte (needs du verdict).
+  # Tests of the PR's CI tooling when it modifies bee/ci/, bee/sandbox/ or this workflow, on minizBee's model: the PR's
+  # code, so a separate job, run in the base's sandbox (no network, processes or environment variables), read only, no
+  # secret or kept credentials, no artifact or output; only its result counts (the verdict's needs).
   outillage-pr:
-    name: Tests de l'outillage de CI de la PR
+    name: Tests of the PR's CI tooling
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: read
     steps:
-      - name: Base de la PR (sandbox)
+      - name: The PR's base (sandbox)
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ env.BASE_SHA }}
           path: base
           persist-credentials: false
-      - name: Tête de la PR (historique complet, pour le diff)
+      - name: The PR's head (full history, for the diff)
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ env.TETE_SHA }}
           path: pr
           fetch-depth: 0
           persist-credentials: false
-      - name: Juges (bee/ de la base, ou de la PR en amorçage)
+      - name: Judges (bee/ of the base, or of the PR at bootstrap)
         run: |
           export base=base pr=pr base_sha="${BASE_SHA:?}" etats="${ETATS:?}"
           eval "$BEE_JUGES"
-      - name: Tests de l'outillage de CI de la PR, dans la sandbox de la base (seulement si la PR modifie bee/ci/, bee/sandbox/ ou ce workflow)
+      - name: Tests of the PR's CI tooling, in the base's sandbox (only if the PR modifies bee/ci/, bee/sandbox/ or this workflow)
         run: |
           if git -C pr diff --quiet "$BASE_SHA...$TETE_SHA" -- bee/ci bee/sandbox .github/workflows/bee-ci.yml; then
-            echo "bee/ci/, bee/sandbox/ et bee-ci.yml inchangés par la PR : pas de tests de l'outillage de la PR."
+            echo "bee/ci/, bee/sandbox/ and bee-ci.yml unchanged by the PR: no tests of the PR's tooling."
             exit 0
           fi
-          # Avant tout code de la PR : Docker arrêté (aucun démon joignable depuis la sandbox), PyYAML pour /usr/bin/python3,
-          # que la sandbox lance (env -i, PATH du système), et espaces de noms utilisateur permis (sans-docker.sh les exige).
+          # Before any of the PR's code: Docker stopped (no daemon reachable from the sandbox), PyYAML for /usr/bin/python3,
+          # which the sandbox runs (env -i, the system's PATH), and user namespaces allowed (sans-docker.sh requires them).
           sudo systemctl stop docker.socket docker
           sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends python3-yaml
           if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then sudo sysctl -q -w kernel.apparmor_restrict_unprivileged_userns=0; fi
@@ -323,20 +320,20 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - name: Base de la PR (verdict.py)
+      - name: The PR's base (verdict.py)
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ env.BASE_SHA }}
           path: base
           persist-credentials: false
-      - name: Historique de la PR (lu par git diff seulement, pour compter les lignes)
+      - name: The PR's history (read by git diff only, to count the lines)
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ env.TETE_SHA }}
           path: pr
           fetch-depth: 0
           persist-credentials: false
-      - name: Juges (bee/ de la base, ou de la PR en amorçage)
+      - name: Judges (bee/ of the base, or of the PR at bootstrap)
         id: juges
         run: |
           export base=base pr=pr base_sha="${BASE_SHA:?}" etats="${ETATS:?}"
@@ -344,13 +341,13 @@ jobs:
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
-      - name: PyYAML (lecture du manifeste et de la tâche)
+      - name: PyYAML (reading the manifest and the task)
         run: pip install "pyyaml==6.0.2"
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: etat-*
           path: artefacts
-      - name: Assembler verdict.json
+      - name: Assemble verdict.json
         env:
           RESULTATS_JOBS: ${{ toJSON(needs) }}
         run: |
@@ -358,10 +355,10 @@ jobs:
           python3 base/bee/ci/verdict.py --artefacts artefacts --etats "$ETATS" --jobs resultats-jobs.json \
             --depot pr --base "$BASE_SHA" --tete "$TETE_SHA" --sortie verdict.json
           cat verdict.json
-      - name: Verdict de repli (base sans juges, verdict.py indisponible)
+      - name: Fallback verdict (base without judges, verdict.py unavailable)
         if: failure() && steps.juges.outcome == 'failure'
         run: |
-          printf '%s\n' '{"ci": "rouge", "etape_en_echec": "Juges (base sans bee/)", "gain": null, "metrique": null, "au_dela_du_bruit": false, "mesures": {"A": {}, "B": {}}, "instructions": null, "degradations": {}, "lignes_modifiees": null, "amorcage": false}' > verdict.json
+          printf '%s\n' '{"ci": "red", "failed_step": "Judges (base without bee/)", "gain": null, "metric": null, "beyond_noise": false, "measurements": {"A": {}, "B": {}}, "instructions": null, "degradations": {}, "changed_lines": null, "bootstrap": false}' > verdict.json
           cat verdict.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()

@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# Étape 1 de la CI Bee : manifeste et taille.
+# Step 1 of the Bee CI: manifest and size.
 #
-# 1. Trouve le manifeste de la PR : manifests/ ou manifestes/<tâche>.yaml, le seul fichier de ces dossiers que la PR ajoute
-#    ou modifie (sinon l'ancien CONTRIBUTION.yaml à la racine) ; lit la tâche qu'il désigne (donnée de la
-#    PR) et la retrouve dans le registre (tache.py : registre et manifeste en français ou en anglais).
-# 2. Lance « bee verifier-fork » ou « check-fork » (verifier_fork.py, noms lus dans son --help) : manifeste valide, plafond de
-#    lignes modifiées (R1), chemins juges intacts pour une optimisation (commandement 3), aucun binaire.
+# 1. Finds the PR's manifest: manifests/ or manifestes/<task>.yaml, the only file of these folders that the PR adds or
+#    modifies (otherwise the former CONTRIBUTION.yaml at the root); reads the task it names (PR data) and finds it in
+#    the registry (tache.py: the registry in English, the manifest in French or in English).
+# 2. Runs « bee check-fork » (verifier_fork.py): valid manifest, cap on changed lines (R1), judge paths untouched by an
+#    optimization (commandment 3), no binary.
 #
-# Usage : bee/ci/manifeste.sh <clone_pr> <clone_registre> [python]
-#   python : interpréteur qui a PyYAML et jsonschema (outils/requirements.txt du registre).
-# Variables : BASE_SHA et TETE_SHA (obligatoires), AUTEUR (auteur de la PR, facultatif),
-#             GITHUB_OUTPUT (facultatif : les valeurs de la tâche y sont ajoutées),
-#             BEE_SORTIE_TACHE (copie de la tâche, défaut tache.yaml).
+# Usage: bee/ci/manifeste.sh <pr_clone> <registry_clone> [python]
+#   python: an interpreter that has PyYAML and jsonschema (the registry's tools/requirements.txt).
+# Variables: BASE_SHA and TETE_SHA (required), AUTEUR (the PR's author, optional),
+#            GITHUB_OUTPUT (optional: the task's values are appended to it),
+#            BEE_SORTIE_TACHE (copy of the task, default tache.yaml).
 set -euo pipefail
 
 ICI="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
